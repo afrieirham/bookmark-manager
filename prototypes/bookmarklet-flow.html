@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bookmarklet flow — prototype (throwaway)</title>
+<style>
+  :root{
+    --bg:#f7f7f5; --panel:#fff; --ink:#1a1a18; --muted:#6b6b66;
+    --line:#e6e5e1; --accent:#4f46e5; --accent-soft:#eef0ff; --warn:#b45309; --warn-soft:#fef3c7;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;}
+  main{max-width:860px;margin:0 auto;padding:40px 20px 80px}
+  h1{font-size:24px;margin:0 0 6px}
+  h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:36px 0 12px}
+  .proto-flag{display:inline-block;font-size:12px;font-weight:600;color:var(--warn);
+    background:var(--warn-soft);border:1px solid #fcd34d;border-radius:999px;padding:2px 10px;margin-bottom:14px}
+  .q{color:var(--muted);max-width:640px;margin:0 0 4px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  button{font:inherit;font-size:14px;padding:8px 14px;border-radius:9px;border:1px solid var(--line);
+    background:#fff;color:var(--ink);cursor:pointer}
+  button:hover{border-color:#cfcec9}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button.primary:hover{filter:brightness(1.06)}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}
+  .browser{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .browser .bar{display:flex;gap:8px;align-items:center;background:#f1f1ee;padding:8px 12px;border-bottom:1px solid var(--line)}
+  .dots{display:flex;gap:6px}.dot{width:11px;height:11px;border-radius:50%;background:#d9d8d4}
+  .url{flex:1;background:#fff;border:1px solid var(--line);border-radius:7px;padding:5px 10px;color:var(--muted);
+    font-family:ui-monospace,Menlo,monospace;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .page{padding:22px 24px}
+  .page h3{margin:0 0 8px;font-size:19px}
+  .bmk{display:inline-block;text-decoration:none;font-size:14px;padding:8px 14px;border-radius:9px;
+    background:var(--accent-soft);border:1px dashed #b9bdf5;color:var(--accent);font-weight:600}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
+  .card{border:1px solid var(--line);border-radius:10px;padding:12px 13px;background:#fff}
+  .card.hot{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  .card .t{font-weight:600;margin-bottom:3px}
+  .card .u{color:var(--muted);font-family:ui-monospace,Menlo,monospace;font-size:12px;word-break:break-all}
+  .tag{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);border:1px solid var(--line);
+    border-radius:999px;padding:1px 8px;margin-left:6px}
+  .pending{background:var(--accent-soft);border:1px solid #c7cbff;border-radius:10px;padding:14px;margin-bottom:14px}
+  .pending input{font:inherit;font-size:15px;font-weight:600;padding:7px 10px;border:1px solid #c7cbff;border-radius:8px;
+    background:#fff;color:var(--ink);width:min(360px,100%)}
+  .state{background:#fbfbfa;border:1px dashed var(--line);border-radius:10px;padding:14px;font-size:14px}
+  .state table{width:100%;border-collapse:collapse}
+  .state th,.state td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  .state th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+  .empty{color:var(--muted);font-style:italic}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+  .tab{font-size:13px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:#fff;cursor:pointer;color:var(--muted)}
+  .tab.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .steps{counter-reset:s;margin:14px 0 0;padding:0;list-style:none}
+  .steps li{counter-increment:s;display:flex;gap:12px;align-items:center;margin-bottom:8px}
+  .steps li::before{content:counter(s);width:24px;height:24px;flex:none;border-radius:50%;background:#eeede9;color:var(--muted);
+    display:grid;place-items:center;font-size:13px;font-weight:600}
+  .steps li.done::before{background:#dcfce7;color:#15803d}
+  .steps li.next button{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  .hint{color:var(--muted);font-size:14px}
+  .flash{animation:none}
+</style>
+</head>
+<body>
+<main>
+  <span class="proto-flag">PROTOTYPE — throwaway</span>
+  <h1>Bookmarklet → save → rename</h1>
+  <p class="q">Question: <strong>does the bookmarklet flow work the way we imagine, and does saving then renaming a Bookmark feel right?</strong>
+  Click the bookmarklet on a page, watch the app save it, then rename it. Free-play or run a guided walkthrough.</p>
+
+  <h2>The page you are looking at</h2>
+  <div class="browser">
+    <div class="bar">
+      <span class="dots"><i class="dot"></i><i class="dot"></i><i class="dot"></i></span>
+      <span class="url" id="sampleUrl"></span>
+    </div>
+    <div class="page">
+      <h3>How to make sourdough</h3>
+      <p class="hint">A long article you want to keep. Normally you would click <em>Save to app</em> in your bookmarks bar.</p>
+      <div class="row">
+        <a class="bmk" id="realBookmarklet" href="#" title="Drag me to your bookmarks bar">★ Save to app</a>
+        <button id="simulate" class="primary">Simulate clicking it on this page</button>
+      </div>
+      <p class="hint" style="margin-top:12px">The bookmarklet is just this one line, so it never holds your token:
+        <br><code id="bmkCode"></code></p>
+    </div>
+  </div>
+
+  <h2>Your app (the start page)</h2>
+  <div class="panel">
+    <div id="pendingWrap"></div>
+    <div id="grid" class="grid"></div>
+  </div>
+
+  <h2>Current state</h2>
+  <div class="state" id="statePanel"></div>
+
+  <h2>Free play</h2>
+  <div class="row">
+    <button id="fBmk" class="primary">Click bookmarklet on the page</button>
+    <button id="fPaste">Paste the page URL and save</button>
+    <button id="fDup">Save the same page again</button>
+    <button id="fRename">Rename the newest Bookmark</button>
+    <button id="fRemove">Remove the newest Bookmark</button>
+    <button id="fReset">Reset</button>
+  </div>
+
+  <h2>Guided walkthroughs</h2>
+  <div class="tabs" id="tabs"></div>
+  <div class="panel">
+    <strong id="wtTitle"></strong>
+    <p class="hint" id="wtDesc"></p>
+    <ol class="steps" id="wtSteps"></ol>
+  </div>
+</main>
+
+<script>
+/* ============================================================================
+   LIFTABLE MODULE — pure save/rename/remove logic for a Bookmark.
+   No DOM here. This is the bit worth keeping once the question is answered.
+   ========================================================================== */
+function initState(){
+  return { bookmarks: [], nextId: 1, pending: null, lastEvent: "reset" };
+}
+function normalizeUrl(raw){
+  const s = (raw || "").trim();
+  try { const u = new URL(s); u.hash = ""; return u.href; } catch { return s; }
+}
+function titleFromUrl(url){
+  try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; }
+}
+function saveBmk(state, { url, title, source }){
+  const nu = normalizeUrl(url);
+  const existing = state.bookmarks.find(b => b.url === nu);
+  if (existing){
+    return { ...state, pending: { id: existing.id, reason: "duplicate", source },
+             lastEvent: "duplicate ignored — already saved" };
+  }
+  const id = state.nextId;
+  const title_ = (title && title.trim()) ? title.trim() : titleFromUrl(nu);
+  const b = { id, url: nu, title: title_, source };
+  return { ...state, bookmarks: [...state.bookmarks, b], nextId: id + 1,
+           pending: { id, reason: "saved", source }, lastEvent: "saved" };
+}
+function renameBmk(state, { id, title }){
+  const t = (title || "").trim();
+  if (!t) return state;
+  return { ...state, lastEvent: "renamed",
+    bookmarks: state.bookmarks.map(b => b.id === id ? { ...b, title: t } : b),
+    pending: state.pending && state.pending.id === id ? null : state.pending };
+}
+function removeBmk(state, { id }){
+  return { ...state, lastEvent: "removed",
+    bookmarks: state.bookmarks.filter(b => b.id !== id),
+    pending: state.pending && state.pending.id === id ? null : state.pending };
+}
+function dismiss(state){ return { ...state, pending: null, lastEvent: "rename dismissed" }; }
+/* ========================================================================== */
+
+const SAMPLE = { url: "https://example.com/sourdough?utm_source=news&ref=mail",
+                 title: "How to make sourdough" };
+
+const BMLET = "javascript:(function(){window.__bmk(location.href,document.title)})()";
+document.getElementById("bmkCode").textContent = BMLET;
+document.getElementById("sampleUrl").textContent = SAMPLE.url;
+document.getElementById("realBookmarklet").setAttribute("href",
+  "javascript:(function(){ if(window.__bmk){window.__bmk(location.href,document.title)} else {alert('On the real app this opens the save endpoint.')} })()");
+
+let state = initState();
+window.__bmk = (url, title) => { state = saveBmk(state, { url, title, source: "bookmarklet" }); render(); };
+
+/* -------- rendering shell (throwaway) -------- */
+const $ = id => document.getElementById(id);
+
+function render(){
+  // pending rename
+  const pw = $("pendingWrap");
+  if (state.pending){
+    const b = state.bookmarks.find(x => x.id === state.pending.id);
+    const dup = state.pending.reason === "duplicate";
+    pw.innerHTML = `
+      <div class="pending">
+        <div style="margin-bottom:8px">
+          <strong>${dup ? "Already saved" : "Saved"}</strong>
+          <span class="hint">${dup ? "— it was already in your list. Rename it, or dismiss." : "— rename it now, or leave the title as it is."}</span>
+        </div>
+        <div class="row">
+          <input id="pendingTitle" value="${escapeAttr(b.title)}" aria-label="Bookmark title">
+          <button class="primary" id="keepName">Keep name</button>
+          <button id="dismiss">Dismiss</button>
+        </div>
+      </div>`;
+    $("keepName").onclick = () => { state = renameBmk(state, { id: b.id, title: $("pendingTitle").value }); render(); };
+    $("dismiss").onclick = () => { state = dismiss(state); render(); };
+  } else { pw.innerHTML = ""; }
+
+  // grid
+  const grid = $("grid");
+  if (!state.bookmarks.length){
+    grid.innerHTML = `<div class="empty">No Bookmark yet. Click the bookmarklet on the page above.</div>`;
+  } else {
+    grid.innerHTML = state.bookmarks.map(b => `
+      <div class="card ${state.pending && state.pending.id === b.id ? "hot" : ""}">
+        <div class="t">${escapeHtml(b.title)}<span class="tag">${b.source}</span></div>
+        <div class="u">${escapeHtml(b.url)}</div>
+      </div>`).join("");
+  }
+
+  // state panel
+  $("statePanel").innerHTML = `
+    <table>
+      <tr><th>Count</th><td>${state.bookmarks.length}</td></tr>
+      <tr><th>Pending</th><td>${state.pending ? `#${state.pending.id} (${state.pending.reason})` : "none"}</td></tr>
+      <tr><th>Last event</th><td>${escapeHtml(state.lastEvent)}</td></tr>
+    </table>
+    <table style="margin-top:10px">
+      <tr><th>ID</th><th>Title</th><th>URL</th><th>Source</th></tr>
+      ${state.bookmarks.map(b => `<tr><td>${b.id}</td><td>${escapeHtml(b.title)}</td>
+        <td class="mono">${escapeHtml(b.url)}</td><td>${b.source}</td></tr>`).join("")
+        || `<tr><td colspan="4" class="empty">empty</td></tr>`}
+    </table>`;
+
+  renderWalkthrough();
+}
+
+function escapeHtml(s){ return String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c])); }
+function escapeAttr(s){ return escapeHtml(s).replace(/'/g, "&#39;"); }
+
+/* -------- free play -------- */
+$("simulate").onclick = () => window.__bmk(SAMPLE.url, SAMPLE.title);
+$("fBmk").onclick = () => window.__bmk(SAMPLE.url, SAMPLE.title);
+$("fPaste").onclick = () => { state = saveBmk(state, { url: SAMPLE.url, title: "", source: "paste" }); render(); };
+$("fDup").onclick = () => { state = saveBmk(state, { url: SAMPLE.url, title: SAMPLE.title, source: "bookmarklet" }); render(); };
+$("fRename").onclick = () => { const b = state.bookmarks[state.bookmarks.length-1]; if (b) { state = renameBmk(state, { id:b.id, title: b.title + " (renamed)" }); render(); } };
+$("fRemove").onclick = () => { const b = state.bookmarks[state.bookmarks.length-1]; if (b) { state = removeBmk(state, { id:b.id }); render(); } };
+$("fReset").onclick = () => { state = initState(); render(); };
+
+/* -------- guided walkthroughs -------- */
+const walkthroughs = [
+  { title: "1. Save with the bookmarklet",
+    desc: "You are on a page. You click Save to app. The app saves it and offers a rename.",
+    steps: [
+      { label: "Click the bookmarklet on the page", run: () => window.__bmk(SAMPLE.url, SAMPLE.title) },
+      { label: "Type a better name: “Sourdough recipe”", run: () => { const p=$("pendingTitle"); if(p) p.value="Sourdough recipe"; } },
+      { label: "Keep name", run: () => { const b=state.bookmarks[0]; state=renameBmk(state,{id:b.id,title:"Sourdough recipe"}); } },
+    ]},
+  { title: "2. Save by pasting instead",
+    desc: "No bookmarklet handy? Paste the URL into the start page. The title falls back to the site name.",
+    steps: [
+      { label: "Paste the page URL and save", run: () => { state = saveBmk(state,{url:SAMPLE.url,title:"",source:"paste"}); } },
+      { label: "Keep the fallback title", run: () => { const b=state.bookmarks[0]; state=renameBmk(state,{id:b.id,title:b.title}); } },
+    ]},
+  { title: "3. Save the same page twice",
+    desc: "The awkward case. Saving a URL you already have must not create a second copy.",
+    steps: [
+      { label: "Click the bookmarklet", run: () => window.__bmk(SAMPLE.url, SAMPLE.title) },
+      { label: "Dismiss the rename", run: () => { state = dismiss(state); } },
+      { label: "Click the bookmarklet again", run: () => window.__bmk(SAMPLE.url, SAMPLE.title) },
+    ]},
+  { title: "4. Rename one later, without leaving",
+    desc: "Editing a Title happens on the start page, inline. No navigation.",
+    steps: [
+      { label: "Click the bookmarklet", run: () => window.__bmk(SAMPLE.url, SAMPLE.title) },
+      { label: "Dismiss the rename", run: () => { state = dismiss(state); } },
+      { label: "Rename the newest Bookmark", run: () => { const b=state.bookmarks[state.bookmarks.length-1]; state=renameBmk(state,{id:b.id,title:b.title+" (edited)"}); } },
+    ]},
+];
+let wt = { active: 0, step: 0 };
+
+function startWalkthrough(i){ state = initState(); wt = { active: i, step: 0 }; render(); }
+function renderWalkthrough(){
+  $("tabs").innerHTML = walkthroughs.map((w,i) =>
+    `<span class="tab ${wt.active===i?"on":""}" data-i="${i}">${w.title}</span>`).join("");
+  [...$("tabs").children].forEach(t => t.onclick = () => startWalkthrough(+t.dataset.i));
+
+  const w = walkthroughs[wt.active];
+  $("wtTitle").textContent = w.title;
+  $("wtDesc").textContent = w.desc;
+  $("wtSteps").innerHTML = w.steps.map((s,i) => {
+    const cls = i < wt.step ? "done" : i === wt.step ? "next" : "";
+    return `<li class="${cls}"><button ${i===wt.step?"":"disabled"} data-step="${i}">${s.label}</button></li>`;
+  }).join("");
+  [...$("wtSteps").querySelectorAll("button")].forEach(b => b.onclick = () => {
+    w.steps[wt.step].run();
+    wt.step = Math.min(wt.step + 1, w.steps.length);
+    render();
+  });
+}
+
+render();
+</script>
+</body>
+</html>
