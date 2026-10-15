@@ -69,3 +69,58 @@ func TestManifestMapsAndroidShareToSaveQueryParams(t *testing.T) {
 		t.Errorf("share_target maps title -> %q, want title", got)
 	}
 }
+
+func TestServiceWorkerIsServedFromTheRootAsJavaScript(t *testing.T) {
+	h := newHandler(t, filepath.Join(t.TempDir(), "db.sqlite"), stubFetcher{})
+
+	// Root path, not /static/: a service worker's scope is limited to its own
+	// directory, so /static/sw.js could only ever control /static/.
+	rr := get(t, h, "/sw.js", nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("GET /sw.js status = %d, want 200", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/javascript") {
+		t.Errorf("service worker Content-Type = %q, want text/javascript", ct)
+	}
+	if rr.Body.Len() == 0 {
+		t.Error("service worker is empty")
+	}
+}
+
+func TestManifestIconsAreServedAsPNG(t *testing.T) {
+	h := newHandler(t, filepath.Join(t.TempDir(), "db.sqlite"), stubFetcher{})
+
+	for _, icon := range fetchManifest(t, h).Icons {
+		rr := get(t, h, icon.Src, nil)
+		if rr.Code != http.StatusOK {
+			t.Errorf("GET %s status = %d, want 200", icon.Src, rr.Code)
+			continue
+		}
+		if ct := rr.Header().Get("Content-Type"); ct != "image/png" {
+			t.Errorf("%s Content-Type = %q, want image/png", icon.Src, ct)
+		}
+		if sig := rr.Body.Bytes()[:8]; string(sig) != "\x89PNG\r\n\x1a\n" {
+			t.Errorf("%s is not a PNG", icon.Src)
+		}
+	}
+}
+
+func TestStartPageLinksTheManifestAndRegistersTheServiceWorker(t *testing.T) {
+	h := newHandler(t, filepath.Join(t.TempDir(), "db.sqlite"), stubFetcher{})
+
+	page := get(t, h, "/", nil).Body.String()
+	if !strings.Contains(page, `rel="manifest"`) || !strings.Contains(page, `href="/manifest.webmanifest"`) {
+		t.Errorf("Start page does not link the manifest:\n%s", page)
+	}
+	if !strings.Contains(page, `rel="icon"`) {
+		t.Errorf("Start page does not link an icon:\n%s", page)
+	}
+	// The service worker is registered only in a secure context, so plain HTTP
+	// (the MVP's deployment) does not try and does not log a failure.
+	if !strings.Contains(page, "navigator.serviceWorker.register('/sw.js')") {
+		t.Errorf("Start page does not register the service worker:\n%s", page)
+	}
+	if !strings.Contains(page, "isSecureContext") {
+		t.Errorf("service worker registration is not gated on a secure context:\n%s", page)
+	}
+}
