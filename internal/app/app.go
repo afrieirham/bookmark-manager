@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"embed"
+	"encoding/json"
 	"html/template"
 	"io/fs"
 	"log"
@@ -96,13 +97,21 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET "+manifestPath, s.handleManifest)
 	mux.HandleFunc("GET "+serviceWorkerPath, s.handleServiceWorker)
 	mux.Handle("GET "+staticPrefix, s.static)
-	mux.HandleFunc("/", s.handleStart)
-	mux.HandleFunc("/save", s.handleSave)
+	// The exact root is its own pattern so the bare-URL catch-all below does not
+	// swallow it: GET /{$} matches only "/", and a more specific pattern wins
+	// over a wildcard. The catch-all is registered last, but precedence, not
+	// order, is what keeps the named routes above it.
+	mux.HandleFunc("GET /{$}", s.handleStart)
+	// GET only, and named, so it outranks the /{url...} wildcard below: the mux
+	// rejects two patterns where neither is strictly more specific, and a method-
+	// less /save would be ambiguous with a GET wildcard.
+	mux.HandleFunc("GET /save", s.handleSave)
 	mux.HandleFunc("POST /rename", s.handleRename)
 	mux.HandleFunc("POST /delete", s.handleDelete)
 	mux.HandleFunc("POST /reorder", s.handleReorder)
 	mux.HandleFunc("GET "+loginPath, s.handleLoginForm)
 	mux.HandleFunc("POST "+loginPath, s.handleLogin)
+	mux.HandleFunc("GET /{url...}", s.handleAlias)
 	return s.authenticate(mux)
 }
 
@@ -149,10 +158,6 @@ type startData struct {
 }
 
 func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
-		return
-	}
 	bookmarks, err := s.store.List(r.Context())
 	if err != nil {
 		s.fail(w, err)
@@ -182,14 +187,49 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleSave is the canonical save endpoint: GET /save?u=<url>&title=<optional>.
 func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
-	nu, ok := domain.NormalizeURL(r.URL.Query().Get("u"))
+	s.save(w, r, r.URL.Query().Get("u"), r.URL.Query().Get("title"))
+}
+
+// handleAlias is the bare-URL alias for /save?u=: reaching the app with the URL
+// in the path saves it. The whole path is the URL, so /example.com/deep/page
+// saves https://example.com/deep/page. A path cannot carry a query or fragment,
+// so a URL with one must use /save?u= instead (the Start page says so). The
+// app's own routes are never treated as URLs, or the catch-all would shadow
+// them.
+func (s *Server) handleAlias(w http.ResponseWriter, r *http.Request) {
+	raw := r.PathValue("url")
+	if isKnownRoute(raw) {
+		http.NotFound(w, r)
+		return
+	}
+	s.save(w, r, raw, "")
+}
+
+// isKnownRoute reports whether the path a bare-URL request carried — with no
+// leading slash, as the wildcard captures it — names one of the app's own
+// routes. Most are matched by their own patterns before the wildcard reaches
+// them; /rename, /delete and /reorder are POST-only, so a GET to one lands on
+// the wildcard and must 404 rather than save.
+func isKnownRoute(path string) bool {
+	full := "/" + path
+	switch full {
+	case "/save", "/rename", "/delete", "/reorder", loginPath, manifestPath, serviceWorkerPath:
+		return true
+	}
+	return strings.HasPrefix(full, staticPrefix)
+}
+
+// save stores raw as a Bookmark, the work /save and the /<url> alias share. An
+// unusable URL and a duplicate are handled the same way from either entry.
+func (s *Server) save(w http.ResponseWriter, r *http.Request, raw, given string) {
+	nu, ok := domain.NormalizeURL(raw)
 	if !ok {
-		http.Redirect(w, r, "/?error=invalid", http.StatusSeeOther)
+		s.respondSaveError(w, r)
 		return
 	}
 
-	given := r.URL.Query().Get("title")
 	fetched, fetchedOK := "", false
 	if strings.TrimSpace(given) == "" {
 		fetched, fetchedOK = s.fetcher.Title(r.Context(), nu)
@@ -202,11 +242,11 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 	}
 	res, ok := domain.Save(existing, nu, given, fetched, fetchedOK, s.now())
 	if !ok {
-		http.Redirect(w, r, "/?error=invalid", http.StatusSeeOther)
+		s.respondSaveError(w, r)
 		return
 	}
 	if res.Duplicate {
-		http.Redirect(w, r, savedLocation(res.Bookmark.ID, true), http.StatusSeeOther)
+		s.respondSaved(w, r, res.Bookmark.ID, true)
 		return
 	}
 
@@ -215,7 +255,47 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	http.Redirect(w, r, savedLocation(saved.ID, false), http.StatusSeeOther)
+	s.respondSaved(w, r, saved.ID, false)
+}
+
+// respondSaved reports a completed save. A browser goes back to the Start page
+// showing the pending-rename prompt, flagged when the URL was already saved; a
+// client asking for JSON gets the Bookmark's id instead, since it has no page to
+// return to and needs the id to act on. Saving a URL that is already saved
+// succeeds with the existing id, so a script may save the same URL twice without
+// having to tell the two apart.
+func (s *Server) respondSaved(w http.ResponseWriter, r *http.Request, id int64, duplicate bool) {
+	if wantsJSON(r) {
+		writeJSON(w, saveResult{OK: true, ID: id}, http.StatusOK)
+		return
+	}
+	http.Redirect(w, r, savedLocation(id, duplicate), http.StatusSeeOther)
+}
+
+// respondSaveError reports a URL that cannot be saved. A JSON client gets a 400
+// rather than a redirect to an HTML page it cannot read.
+func (s *Server) respondSaveError(w http.ResponseWriter, r *http.Request) {
+	if wantsJSON(r) {
+		writeJSON(w, saveResult{OK: false, Error: "invalid url"}, http.StatusBadRequest)
+		return
+	}
+	http.Redirect(w, r, "/?error=invalid", http.StatusSeeOther)
+}
+
+// saveResult is the machine-readable outcome of a save: {"ok":true,"id":n} when
+// it worked, and an explanation instead when the URL was unusable.
+type saveResult struct {
+	OK    bool   `json:"ok"`
+	ID    int64  `json:"id,omitempty"`
+	Error string `json:"error,omitempty"`
+}
+
+func writeJSON(w http.ResponseWriter, v any, status int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		log.Printf("app: write JSON: %v", err)
+	}
 }
 
 func savedLocation(id int64, duplicate bool) string {
