@@ -1,0 +1,41 @@
+# Deployment example for the bookmark manager.
+#
+#   cp .env.example .env      # then edit TOKEN
+#   sudo mkdir -p /mnt/usb1/bookmarks
+#   docker compose up --build
+#
+# The app then listens on http://localhost:8080/ (see deploy/README.md).
+services:
+  bookmarks:
+    build: .
+    image: bookmark-manager:local
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      DB_PATH: "/data/bookmarks.sqlite"
+
+      # Public base URL the app builds links with. Leave unset to derive it from
+      # each request (Host + X-Forwarded-Proto) — the default, and correct when
+      # the proxy passes the real Host through. Set it only when the proxy
+      # presents a different public address than the request Host.
+      # BASE_URL: "http://bookmarks.pi"
+
+      # Shared secret. Auth is ON by default, so a value is required: the app
+      # exits at startup if TOKEN is empty and auth is not disabled. Set a
+      # strong one in .env (copied from .env.example).
+      TOKEN: "${TOKEN:?set TOKEN in .env}"
+
+      # Auth-off flag: disables the shared secret on a fully trusted network.
+      # Accepted truthy values: 1, true, yes, on. Uncomment ONLY on a trusted
+      # LAN — with it set, every Bookmark is served to anyone who can reach the
+      # port.
+      # AUTH_DISABLED: "1"
+    volumes:
+      # SQLite is bind-mounted to a host path (spec example). Bind the
+      # directory; the DB file appears inside it and survives restarts.
+      - /mnt/usb1/bookmarks:/data
+    # Runs as root by default so it can write the host directory. To run
+    # unprivileged: chown the host dir to 65532:65532 and uncomment this line.
+    # user: "65532:65532"

@@ -1,0 +1,11 @@
+# Keep the build context small and never bake secrets or history into an image.
+.git
+.gitignore
+.env
+.env.example
+deploy/
+docs/
+AGENTS.md
+GLOSSARY.md
+*.sqlite
+*.sqlite-journal
