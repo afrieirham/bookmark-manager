@@ -160,11 +160,11 @@ func TestReorderAppliesTheGivenOrder(t *testing.T) {
 		{ID: 2, URL: "https://b.example", Title: "B", Position: 1},
 		{ID: 3, URL: "https://c.example", Title: "C", Position: 2},
 	}
-	got, ok := domain.Reorder(existing, []int64{3, 1, 2})
-	if !ok {
-		t.Fatal("Reorder rejected the full list of ids")
-	}
+	got := domain.Reorder(existing, []int64{3, 1, 2})
 	wantIDs := []int64{3, 1, 2}
+	if len(got) != len(wantIDs) {
+		t.Fatalf("got %d Bookmarks, want %d", len(got), len(wantIDs))
+	}
 	for i, b := range got {
 		if b.ID != wantIDs[i] {
 			t.Errorf("position %d holds id %d, want %d", i, b.ID, wantIDs[i])
@@ -180,86 +180,42 @@ func TestReorderKeepsEachBookmarkIntact(t *testing.T) {
 		{ID: 1, URL: "https://a.example", Title: "A", Position: 0},
 		{ID: 2, URL: "https://b.example", Title: "B", Position: 1},
 	}
-	got, ok := domain.Reorder(existing, []int64{2, 1})
-	if !ok {
-		t.Fatal("Reorder rejected the full list of ids")
-	}
+	got := domain.Reorder(existing, []int64{2, 1})
 	if got[0].URL != "https://b.example" || got[0].Title != "B" {
 		t.Errorf("Reorder altered the Bookmark it moved: %+v", got[0])
 	}
 }
 
-func TestReorderRejectsAnythingButTheFullSet(t *testing.T) {
+func TestReorderKeepsBookmarksTheListLeavesOut(t *testing.T) {
 	existing := []domain.Bookmark{
 		{ID: 1, Position: 0},
 		{ID: 2, Position: 1},
 		{ID: 3, Position: 2},
 	}
-	cases := []struct {
-		name string
-		ids  []int64
-	}{
-		{"too few", []int64{2, 1}},
-		{"an unknown id", []int64{1, 2, 99}},
-		{"a repeated id", []int64{1, 1, 2}},
-		{"empty", nil},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if _, ok := domain.Reorder(existing, c.ids); ok {
-				t.Errorf("Reorder(%v) accepted a list that is not the full set", c.ids)
-			}
-		})
+	// 3 is named first; 999 names nothing; 1 and 2 are left out and follow.
+	got := domain.Reorder(existing, []int64{3, 999})
+	wantIDs := []int64{3, 1, 2}
+	for i, b := range got {
+		if b.ID != wantIDs[i] {
+			t.Errorf("position %d holds id %d, want %d", i, b.ID, wantIDs[i])
+		}
 	}
 }
 
-func TestReorderAppliesTheGivenOrder(t *testing.T) {
+func TestReorderIgnoresARepeatedID(t *testing.T) {
 	existing := []domain.Bookmark{
-		{ID: 1, Title: "A", Position: 0},
-		{ID: 2, Title: "B", Position: 1},
-		{ID: 3, Title: "C", Position: 2},
+		{ID: 1, Position: 0},
+		{ID: 2, Position: 1},
+		{ID: 3, Position: 2},
 	}
-
-	got := domain.Reorder(existing, []int64{3, 1, 2})
-
-	want := []int64{3, 1, 2}
-	if len(got) != len(want) {
-		t.Fatalf("got %d Bookmarks, want %d", len(got), len(want))
+	got := domain.Reorder(existing, []int64{2, 2, 1, 3})
+	wantIDs := []int64{2, 1, 3}
+	if len(got) != len(wantIDs) {
+		t.Fatalf("got %d Bookmarks, want %d", len(got), len(wantIDs))
 	}
-	for i, id := range want {
-		if got[i].ID != id {
-			t.Errorf("position %d holds Bookmark %d, want %d", i, got[i].ID, id)
-		}
-		if got[i].Position != i {
-			t.Errorf("Bookmark %d has Position %d, want %d", got[i].ID, got[i].Position, i)
-		}
-	}
-}
-
-func TestReorderIgnoresUnknownIDsAndRepeats(t *testing.T) {
-	existing := []domain.Bookmark{{ID: 1}, {ID: 2}, {ID: 3}}
-
-	got := domain.Reorder(existing, []int64{2, 999, 2})
-
-	if len(got) != 3 {
-		t.Fatalf("got %d Bookmarks, want every one kept", len(got))
-	}
-	if got[0].ID != 2 {
-		t.Errorf("first Bookmark = %d, want the named 2", got[0].ID)
-	}
-}
-
-func TestReorderKeepsBookmarksTheCallerLeftOut(t *testing.T) {
-	existing := []domain.Bookmark{{ID: 1}, {ID: 2}, {ID: 3}}
-
-	got := domain.Reorder(existing, []int64{3})
-
-	if len(got) != 3 {
-		t.Fatalf("got %d Bookmarks, want none dropped", len(got))
-	}
-	for i, id := range []int64{3, 1, 2} {
-		if got[i].ID != id {
-			t.Errorf("position %d holds Bookmark %d, want %d", i, got[i].ID, id)
+	for i, b := range got {
+		if b.ID != wantIDs[i] {
+			t.Errorf("position %d holds id %d, want %d", i, b.ID, wantIDs[i])
 		}
 	}
 }
