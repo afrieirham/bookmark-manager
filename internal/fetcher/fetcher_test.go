@@ -26,7 +26,7 @@ func TestTitleReadsThePagesTitle(t *testing.T) {
 		w.Write([]byte(`<html><head><title>  A Page  </title></head><body>hi</body></html>`))
 	})
 
-	got, ok := fetcher.New().Title(context.Background(), url)
+	got, ok := testFetcher(fetcher.DefaultTimeout).Title(context.Background(), url)
 	if !ok {
 		t.Fatal("no Title was found")
 	}
@@ -43,7 +43,7 @@ func TestTitleFindsATitleAmongOtherHeadElements(t *testing.T) {
 			`</head><body></body></html>`))
 	})
 
-	got, ok := fetcher.New().Title(context.Background(), url)
+	got, ok := testFetcher(fetcher.DefaultTimeout).Title(context.Background(), url)
 	if !ok || got != "Real Title" {
 		t.Errorf("Title = %q, ok = %v; want %q", got, ok, "Real Title")
 	}
@@ -54,7 +54,7 @@ func TestTitleReportsFailureWhenThePageHasNoTitle(t *testing.T) {
 		w.Write([]byte(`<html><head></head><body>no title here</body></html>`))
 	})
 
-	if got, ok := fetcher.New().Title(context.Background(), url); ok {
+	if got, ok := testFetcher(fetcher.DefaultTimeout).Title(context.Background(), url); ok {
 		t.Errorf("Title = %q, ok = true; want no Title", got)
 	}
 }
@@ -65,7 +65,7 @@ func TestTitleReportsFailureOnAnErrorStatus(t *testing.T) {
 		w.Write([]byte(`<title>Not Found</title>`))
 	})
 
-	if _, ok := fetcher.New().Title(context.Background(), url); ok {
+	if _, ok := testFetcher(fetcher.DefaultTimeout).Title(context.Background(), url); ok {
 		t.Error("a 404 still produced a Title")
 	}
 }
@@ -78,7 +78,7 @@ func TestTitleOnlyReadsHTTPAndHTTPS(t *testing.T) {
 		"data:text/html,<title>Inline</title>",
 	} {
 		t.Run(rawURL, func(t *testing.T) {
-			if got, ok := fetcher.New().Title(context.Background(), rawURL); ok {
+			if got, ok := testFetcher(fetcher.DefaultTimeout).Title(context.Background(), rawURL); ok {
 				t.Errorf("Title = %q, ok = true; want the scheme refused", got)
 			}
 		})
@@ -91,7 +91,7 @@ func TestTitleGivesUpOnASlowPage(t *testing.T) {
 		w.Write([]byte(`<title>Too Late</title>`))
 	})
 
-	f := fetcher.NewWithTimeout(25 * time.Millisecond)
+	f := testFetcher(25 * time.Millisecond)
 	start := time.Now()
 	if got, ok := f.Title(context.Background(), url); ok {
 		t.Errorf("Title = %q, ok = true; want the slow page abandoned", got)
@@ -110,7 +110,7 @@ func TestTitleGivesUpWhenTheCallerCancels(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
 	defer cancel()
 
-	if _, ok := fetcher.New().Title(ctx, url); ok {
+	if _, ok := testFetcher(fetcher.DefaultTimeout).Title(ctx, url); ok {
 		t.Error("a cancelled read still produced a Title")
 	}
 }
@@ -120,7 +120,7 @@ func TestTitleReportsFailureWhenTheHostCannotBeReached(t *testing.T) {
 	url := srv.URL
 	srv.Close() // nothing is listening now
 
-	if _, ok := fetcher.New().Title(context.Background(), url); ok {
+	if _, ok := testFetcher(fetcher.DefaultTimeout).Title(context.Background(), url); ok {
 		t.Error("an unreachable host still produced a Title")
 	}
 }
@@ -137,8 +137,47 @@ func TestTitleReadsAPageLargerThanTheCap(t *testing.T) {
 		w.Write(big)
 	})
 
-	got, ok := fetcher.New().Title(context.Background(), url)
+	got, ok := testFetcher(fetcher.DefaultTimeout).Title(context.Background(), url)
 	if !ok || got != "Found Early" {
 		t.Errorf("Title = %q, ok = %v; want %q", got, ok, "Found Early")
 	}
+}
+
+// TestTitleRefusesAPrivateAddress is the SSRF guard. A saved URL is fetched by
+// the server, not the browser, so a loopback or private target would let a
+// Bookmark read a service the client cannot reach — and because the Title is
+// stored and shown on the Start page, the response is not blind.
+func TestTitleRefusesAPrivateAddress(t *testing.T) {
+	url := pageServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`<title>Internal Service</title>`))
+	})
+
+	if got, ok := fetcher.New().Title(context.Background(), url); ok {
+		t.Errorf("Title = %q, ok = true; want the private address refused", got)
+	}
+}
+
+// TestTitleRefusesAPrivateLiteralAddress covers a target given as an IP rather
+// than a name, which never goes through DNS.
+func TestTitleRefusesAPrivateLiteralAddress(t *testing.T) {
+	for _, rawURL := range []string{
+		"http://127.0.0.1/",
+		"http://10.0.0.1/",
+		"http://192.168.1.1/",
+		"http://169.254.169.254/latest/meta-data/",
+		"http://[::1]/",
+	} {
+		t.Run(rawURL, func(t *testing.T) {
+			if got, ok := fetcher.New().Title(context.Background(), rawURL); ok {
+				t.Errorf("Title = %q, ok = true; want the private address refused", got)
+			}
+		})
+	}
+}
+
+// testFetcher reaches the loopback servers these tests stand up. New() refuses
+// private addresses on purpose (see TestTitleRefusesAPrivateAddress), so the
+// tests that are about reading a Title supply their own client.
+func testFetcher(d time.Duration) *fetcher.HTTP {
+	return fetcher.NewWithClient(&http.Client{Timeout: d})
 }

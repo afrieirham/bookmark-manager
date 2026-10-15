@@ -1,6 +1,12 @@
 package main
 
-import "testing"
+import (
+	"net/http"
+	"testing"
+	"time"
+
+	"github.com/afrieirham/bookmark-manager/internal/fetcher"
+)
 
 func TestConfigComesFromTheEnvironment(t *testing.T) {
 	t.Setenv("TOKEN", "s3cret")
@@ -41,5 +47,28 @@ func TestAuthDisabledNeedsNoToken(t *testing.T) {
 	}
 	if !cfg.AuthDisabled {
 		t.Error("AUTH_DISABLED=1 did not switch authentication off")
+	}
+}
+
+// TestServerHasTimeouts pins the hardening: without these the default server
+// lets a client hold a connection open by sending nothing.
+func TestServerHasTimeouts(t *testing.T) {
+	srv := newServer(":0", http.NotFoundHandler())
+
+	for name, d := range map[string]time.Duration{
+		"ReadHeaderTimeout": srv.ReadHeaderTimeout,
+		"ReadTimeout":       srv.ReadTimeout,
+		"WriteTimeout":      srv.WriteTimeout,
+		"IdleTimeout":       srv.IdleTimeout,
+	} {
+		if d <= 0 {
+			t.Errorf("%s = %v, want a positive timeout", name, d)
+		}
+	}
+	// A save waits on the fetcher before it can write its answer, so a write
+	// timeout shorter than that would cut off the very request it is serving.
+	if srv.WriteTimeout <= fetcher.DefaultTimeout {
+		t.Errorf("WriteTimeout %v does not outlast the fetcher's %v",
+			srv.WriteTimeout, fetcher.DefaultTimeout)
 	}
 }

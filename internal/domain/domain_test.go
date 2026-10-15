@@ -238,3 +238,47 @@ func TestNormalizeURLRefusesAURLWithNoHost(t *testing.T) {
 		})
 	}
 }
+
+// TestSaveAppendsAfterTheHighestPosition pins the append rule at the pure seam:
+// the end of the grid is the highest position in use, not the number of
+// Bookmarks. Those differ as soon as one has been deleted, because deleting
+// never reindexes.
+func TestSaveAppendsAfterTheHighestPosition(t *testing.T) {
+	existing := []domain.Bookmark{{ID: 1, Position: 0}, {ID: 4, Position: 3}}
+
+	res, ok := domain.Save(existing, "https://e.example", "E", "", false, time.Now())
+	if !ok {
+		t.Fatal("Save refused a usable URL")
+	}
+	if res.Bookmark.Position != 4 {
+		t.Errorf("Position = %d, want 4: one past the highest position in use", res.Bookmark.Position)
+	}
+}
+
+// TestSaveAppendsToAnEmptyGrid keeps the first Bookmark at position 0.
+func TestSaveAppendsToAnEmptyGrid(t *testing.T) {
+	res, ok := domain.Save(nil, "https://a.example", "A", "", false, time.Now())
+	if !ok {
+		t.Fatal("Save refused a usable URL")
+	}
+	if res.Bookmark.Position != 0 {
+		t.Errorf("Position = %d, want 0", res.Bookmark.Position)
+	}
+}
+
+// TestNormalizeURLOnlyAcceptsHTTPAndHTTPS keeps a scheme the app can neither
+// fetch nor safely render out of storage. html/template neutralises a
+// javascript: href, but the value should never be stored in the first place.
+func TestNormalizeURLOnlyAcceptsHTTPAndHTTPS(t *testing.T) {
+	for _, raw := range []string{
+		"javascript://evil.example/%0Aalert(1)",
+		"file://host/etc/passwd",
+		"ftp://example.com/page",
+	} {
+		t.Run(raw, func(t *testing.T) {
+			if got, ok := domain.NormalizeURL(raw); ok {
+				t.Errorf("NormalizeURL(%q) = %q, ok = true; want the scheme refused", raw, got)
+			}
+		})
+	}
+}

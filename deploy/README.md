@@ -25,12 +25,31 @@ All configuration is environment variables.
 | `TOKEN` | *(required)* | Shared secret. Authentication is **on by default**, so a non-empty value is required. The app exits at startup if `TOKEN` is empty and auth is not disabled. |
 | `AUTH_DISABLED` | *(off)* | Disables authentication on a fully trusted network. Accepts `1`, `true`, `yes`, or `on`. |
 
-`TOKEN` is accepted as `Authorization: Bearer <token>`, or as a cookie set after
-entering it once. `BASE_URL` is optional per ADR-0001.
+`TOKEN` is accepted as `Authorization: Bearer <token>`, or as a session cookie
+set after entering it once. The cookie does **not** carry the Token: it holds a
+value derived from it, so copying the cookie out of a browser does not hand over
+the operator's long-lived secret, and rotating `TOKEN` retires every cookie
+issued under the old one. `BASE_URL` is optional per ADR-0001.
 
 Auth is on by default and the app **fails fast**: with `TOKEN` unset and
 `AUTH_DISABLED` off, the process logs the reason and exits, so a misconfigured
 container does not silently serve every Bookmark in the clear.
+
+### Choose a long `TOKEN`
+
+`POST /login` is not rate limited: the app is a single-user Start page, and a
+limiter would have to be built and tuned to be worth having. What keeps guessing
+impractical is the Token's own length, so **use a long random one** — 32
+characters or more from a password manager, or:
+
+```sh
+head -c 32 /dev/urandom | base64     # a suitable TOKEN
+```
+
+A short or guessable Token is the one configuration this deployment cannot
+protect you from. Comparison is constant-time, so a wrong Token leaks nothing
+through timing, and the login page returns the same redirect for every wrong
+value.
 
 ## Run with Docker Compose
 

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/afrieirham/bookmark-manager/internal/app"
 	"github.com/afrieirham/bookmark-manager/internal/fetcher"
@@ -31,8 +32,24 @@ func main() {
 
 	addr := ":" + port
 	log.Printf("bookmark manager listening on %s (db %s, auth %s)", addr, dbPath, authMode(cfg))
-	if err := http.ListenAndServe(addr, app.New(st, fetcher.New(), cfg).Handler()); err != nil {
+	if err := newServer(addr, app.New(st, fetcher.New(), cfg).Handler()).ListenAndServe(); err != nil {
 		log.Fatal(err)
+	}
+}
+
+// newServer builds the HTTP server with timeouts. The defaults have none, so a
+// client that opens a connection and then sends nothing holds it open, and a
+// handful of those are enough to exhaust the app.
+func newServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		// Comfortably longer than the fetcher's timeout: a save waits on a page
+		// read before it can answer, and the write must outlast that wait.
+		WriteTimeout: 60 * time.Second,
+		IdleTimeout:  2 * time.Minute,
 	}
 }
 

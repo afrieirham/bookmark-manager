@@ -34,8 +34,28 @@ func NormalizeURL(raw string) (string, bool) {
 	if err != nil || u.Hostname() == "" {
 		return "", false
 	}
+	// Only the two schemes the app can fetch and safely render. A javascript: or
+	// file: URL is not a Bookmark, and should not reach storage to be neutralised
+	// on the way out.
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", false
+	}
 	u.Fragment = ""
 	return u.String(), true
+}
+
+// nextPosition is where a new Bookmark goes: one past the highest position in
+// use. The number of Bookmarks is not the same thing, because deleting never
+// reindexes, so a grid that has lost one has a gap in its positions and a new
+// Bookmark would land in the middle of it.
+func nextPosition(existing []Bookmark) int {
+	next := 0
+	for _, b := range existing {
+		if b.Position >= next {
+			next = b.Position + 1
+		}
+	}
+	return next
 }
 
 // FallbackTitle chooses a Bookmark's Title: the given title when there is one,
@@ -83,7 +103,7 @@ func Save(existing []Bookmark, rawURL, givenTitle, fetchedTitle string, fetchedO
 		URL:       nu,
 		Title:     FallbackTitle(nu, givenTitle, fetchedTitle, fetchedOK),
 		CreatedAt: now,
-		Position:  len(existing),
+		Position:  nextPosition(existing),
 	}
 	return SaveResult{Bookmark: b}, true
 }

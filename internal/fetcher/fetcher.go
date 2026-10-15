@@ -3,10 +3,13 @@ package fetcher
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
+	"syscall"
 	"time"
 
 	"golang.org/x/net/html"
@@ -26,12 +29,66 @@ type HTTP struct {
 // redirect.
 const DefaultTimeout = 5 * time.Second
 
-// New returns an HTTP fetcher with DefaultTimeout.
+// New returns an HTTP fetcher with DefaultTimeout that will not connect to a
+// private address. The URL it reads is chosen by whoever can reach the save
+// endpoint, but the server is the one that makes the request, so an unguarded
+// fetcher would reach a service the client cannot — and because the Title is
+// stored and shown on the Start page, the answer would come back.
 func New() *HTTP { return NewWithTimeout(DefaultTimeout) }
 
-// NewWithTimeout returns an HTTP fetcher that gives up on a page after d.
+// NewWithTimeout returns a guarded fetcher that gives up on a page after d.
 func NewWithTimeout(d time.Duration) *HTTP {
-	return &HTTP{client: &http.Client{Timeout: d}}
+	return NewWithClient(&http.Client{Timeout: d, Transport: guardedTransport(d)})
+}
+
+// NewWithClient is the seam for the reachability policy: the caller supplies the
+// client, and with it decides which addresses may be reached. Production code
+// wants New.
+func NewWithClient(c *http.Client) *HTTP { return &HTTP{client: c} }
+
+// guardedTransport dials only public addresses. The check runs at connect time
+// against the address actually being connected to, so it covers a redirect to a
+// private host and a name that resolves differently on the second lookup.
+func guardedTransport(d time.Duration) *http.Transport {
+	dialer := &net.Dialer{
+		Timeout: d,
+		Control: func(_, address string, _ syscall.RawConn) error {
+			host, _, err := net.SplitHostPort(address)
+			if err != nil {
+				return fmt.Errorf("refusing %q: %w", address, err)
+			}
+			ip := net.ParseIP(host)
+			if ip == nil {
+				return fmt.Errorf("refusing %q: not an IP address", address)
+			}
+			if isPrivate(ip) {
+				return fmt.Errorf("refusing %s: private address", ip)
+			}
+			return nil
+		},
+	}
+	return &http.Transport{
+		DialContext:         dialer.DialContext,
+		ForceAttemptHTTP2:   true,
+		TLSHandshakeTimeout: 5 * time.Second,
+		// No Proxy: a proxy resolves the target itself, so the guard would only
+		// ever see the proxy's address and the private-address check would be
+		// decoration.
+	}
+}
+
+// isPrivate reports whether ip is an address the app should not reach on a
+// saved URL's behalf: loopback, the private ranges, and link-local, which is
+// where the cloud metadata services live. Carrier-grade NAT is deliberately not
+// included — that is where a Tailscale address sits, and bookmarking a service
+// on the operator's own tailnet is a reasonable thing to want.
+func isPrivate(ip net.IP) bool {
+	return ip.IsLoopback() ||
+		ip.IsPrivate() ||
+		ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() ||
+		ip.IsUnspecified() ||
+		ip.IsMulticast()
 }
 
 // Title returns the page's <title> text, or ok=false when it cannot be read.

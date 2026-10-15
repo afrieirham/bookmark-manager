@@ -131,3 +131,21 @@ func TestReorderRunsAsOneTransaction(t *testing.T) {
 		}
 	}
 }
+
+// TestNewBookmarkLandsAtTheEndAfterADeletion is the append rule against a gap in
+// the positions: deleting never reindexes, so the end of the grid is no longer
+// the number of Bookmarks, and a new one would otherwise land mid-grid.
+func TestNewBookmarkLandsAtTheEndAfterADeletion(t *testing.T) {
+	h := newHandler(t, filepath.Join(t.TempDir(), "db.sqlite"), stubFetcher{})
+	saveThree(t, h) // 1, 2, 3
+	get(t, h, "/save?u="+url.QueryEscape("https://d.example")+"&title=D", nil)
+
+	post(t, h, "/delete", url.Values{"id": {"2"}})
+	post(t, h, "/delete", url.Values{"id": {"3"}})
+	get(t, h, "/save?u="+url.QueryEscape("https://e.example")+"&title=E", nil)
+
+	got := gridOrder(t, get(t, h, "/", nil).Body.String())
+	if !equalIDs(got, []string{"1", "4", "5"}) {
+		t.Errorf("grid order = %v, want the new Bookmark last: [1 4 5]", got)
+	}
+}

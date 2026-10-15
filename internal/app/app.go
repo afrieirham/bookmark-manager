@@ -3,8 +3,11 @@ package app
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/subtle"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"html/template"
 	"io/fs"
@@ -409,13 +412,26 @@ func (s *Server) handleReorder(w http.ResponseWriter, r *http.Request) {
 // scheme reports the scheme the client used, as seen through a proxy.
 // X-Forwarded-Proto wins over the transport scheme.
 func (s *Server) scheme(r *http.Request) string {
-	if p := r.Header.Get("X-Forwarded-Proto"); p != "" {
+	if p := forwardedProto(r.Header.Get("X-Forwarded-Proto")); p != "" {
 		return p
 	}
 	if r.TLS != nil {
 		return "https"
 	}
 	return "http"
+}
+
+// forwardedProto reads the first hop of an X-Forwarded-Proto header, which a
+// chain of proxies may have appended to ("https, http"). Only a scheme the app
+// knows is returned: this value reaches the base URL the Start page renders and
+// the cookie's Secure flag, so arbitrary text here would end up in both.
+func forwardedProto(header string) string {
+	first, _, _ := strings.Cut(header, ",")
+	switch p := strings.ToLower(strings.TrimSpace(first)); p {
+	case "http", "https":
+		return p
+	}
+	return ""
 }
 
 // baseURLFor builds the app's public base URL from the request, so links are
@@ -428,9 +444,18 @@ func (s *Server) baseURLFor(r *http.Request) string {
 }
 
 func bookmarklet(base string) template.URL {
-	js := "javascript:(function(){window.open('" + base +
+	js := "javascript:(function(){window.open('" + jsString(base) +
 		"/save?u='+encodeURIComponent(location.href)+'&title='+encodeURIComponent(document.title),'_blank')})()"
 	return template.URL(js)
+}
+
+// jsString escapes s for use inside a single-quoted JavaScript string. base
+// comes from the Host header, and the finished bookmarklet is a template.URL,
+// which tells html/template to leave the href alone — so the escaping that would
+// normally make this safe never runs, and a quote in the host would close the
+// string and run whatever followed it.
+func jsString(s string) string {
+	return strings.NewReplacer(`\`, `\\`, "'", `\'`, "\n", `\n`, "\r", `\r`).Replace(s)
 }
 
 func (s *Server) fail(w http.ResponseWriter, err error) {
@@ -486,7 +511,7 @@ func (s *Server) authenticated(r *http.Request) bool {
 			return true
 		}
 	}
-	if c, err := r.Cookie(cookieName); err == nil && equalSecret(c.Value, s.cfg.Token) {
+	if c, err := r.Cookie(cookieName); err == nil && equalSecret(c.Value, SessionValue(s.cfg.Token)) {
 		return true
 	}
 	return false
@@ -533,17 +558,34 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, loginPath+"?error=1", http.StatusSeeOther)
 		return
 	}
-	http.SetCookie(w, s.sessionCookie(r, s.cfg.Token))
+	http.SetCookie(w, s.sessionCookie(r, SessionValue(s.cfg.Token)))
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-// sessionCookie is the cookie that remembers the Token on a device.
-func (s *Server) sessionCookie(r *http.Request, token string) *http.Cookie {
+// sessionContext separates this derivation from any other use of the Token as a
+// key, so the cookie value cannot be confused with a value derived elsewhere.
+const sessionContext = "bookmark-manager session v1"
+
+// SessionValue is the value the session cookie carries for a given Token. It is
+// derived rather than being the Token itself: a cookie is the credential most
+// likely to be copied out of a browser, and the Token is also the operator's
+// long-lived secret, which they may well have reused elsewhere. This value
+// authenticates this app and nothing else, and rotating the Token retires every
+// cookie issued under the old one.
+func SessionValue(token string) string {
+	mac := hmac.New(sha256.New, []byte(token))
+	mac.Write([]byte(sessionContext))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// sessionCookie is the cookie that keeps a device logged in after it has entered
+// the Token once.
+func (s *Server) sessionCookie(r *http.Request, value string) *http.Cookie {
 	return &http.Cookie{
 		Name:  cookieName,
-		Value: token,
+		Value: value,
 		Path:  "/",
-		// HttpOnly keeps the Token away from any script on the page.
+		// HttpOnly keeps the credential away from any script on the page.
 		HttpOnly: true,
 		// Lax, not Strict: the bookmarklet and the Android share target arrive as
 		// cross-site top-level GETs, and Strict would withhold the cookie from them.

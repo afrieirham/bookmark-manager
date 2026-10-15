@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/afrieirham/bookmark-manager/internal/app"
 )
 
 func newAuthedHandler(t *testing.T) http.Handler {
@@ -68,9 +70,33 @@ func TestCookieAuthenticatesLaterVisits(t *testing.T) {
 	h := newAuthedHandler(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.AddCookie(&http.Cookie{Name: "bm_token", Value: testToken})
+	req.AddCookie(&http.Cookie{Name: "bm_token", Value: app.SessionValue(testToken)})
 	if rr := serve(t, h, req); rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 with the cookie", rr.Code)
+	}
+}
+
+// TestTheCookieIsNotTheToken is the point of deriving the cookie value: a cookie
+// is easy to copy out of a browser, and the Token is the operator's long-lived
+// secret, which they may have reused for something else. The cookie that
+// authenticates this app must not hand that secret over.
+func TestTheCookieIsNotTheToken(t *testing.T) {
+	h := newAuthedHandler(t)
+
+	rr := serve(t, h, formRequest(t, "/login", url.Values{"token": {testToken}}))
+	cookies := rr.Result().Cookies()
+	if len(cookies) == 0 {
+		t.Fatal("entering the Token set no cookie")
+	}
+	if cookies[0].Value == testToken {
+		t.Errorf("the session cookie carries the Token itself: %q", cookies[0].Value)
+	}
+
+	// The raw Token is not accepted in the cookie's place.
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{Name: "bm_token", Value: testToken})
+	if rr := serve(t, h, req); rr.Code == http.StatusOK {
+		t.Error("the raw Token was accepted as a session cookie")
 	}
 }
 
@@ -86,8 +112,8 @@ func TestEnteringTheTokenOnceSetsTheCookie(t *testing.T) {
 		t.Fatal("entering the Token set no cookie")
 	}
 	c := cookies[0]
-	if c.Name != "bm_token" || c.Value != testToken {
-		t.Errorf("cookie = %s=%s, want bm_token=%s", c.Name, c.Value, testToken)
+	if c.Name != "bm_token" || c.Value != app.SessionValue(testToken) {
+		t.Errorf("cookie = %s=%s, want bm_token=%s", c.Name, c.Value, app.SessionValue(testToken))
 	}
 	// Lax, not Strict: the bookmarklet and the Android share target arrive as
 	// cross-site top-level GETs, and Strict would withhold the cookie from them.

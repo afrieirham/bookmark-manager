@@ -118,6 +118,42 @@ func TestBookmarkletEmbedsNoToken(t *testing.T) {
 	}
 }
 
+// TestBookmarkletEscapesAHostileHost keeps the Host header from breaking out of
+// the bookmarklet. The base URL is built from the request's Host, the finished
+// href is a template.URL that html/template leaves unescaped, and the browser
+// undoes the percent-encoding before it evaluates the script — so a quote in the
+// host would close the JavaScript string and run whatever came after it. The
+// client can only do this to itself, but the page it produces is still one the
+// app should not be able to be made to serve.
+func TestBookmarkletEscapesAHostileHost(t *testing.T) {
+	h := newHandler(t, filepath.Join(t.TempDir(), "db.sqlite"), stubFetcher{})
+
+	href := bookmarkletHref(t, get(t, h, "/", map[string]string{
+		"Host": `evil'.example`,
+	}).Body.String())
+
+	if strings.Contains(href, `window.open('http://evil'.example`) {
+		t.Errorf("a quote in the Host closed the bookmarklet's string literal: %q", href)
+	}
+	if !strings.Contains(href, `window.open('http://evil\'.example/save?u='`) {
+		t.Errorf("the host was not escaped for the JavaScript string: %q", href)
+	}
+}
+
+// TestBookmarkletLeavesAnOrdinaryHostAlone guards the other direction: the
+// escaping above must not put stray backslashes in the common case.
+func TestBookmarkletLeavesAnOrdinaryHostAlone(t *testing.T) {
+	h := newHandler(t, filepath.Join(t.TempDir(), "db.sqlite"), stubFetcher{})
+
+	href := bookmarkletHref(t, get(t, h, "/", map[string]string{"Host": "bookmarks.pi"}).Body.String())
+	if strings.Contains(href, `\`) {
+		t.Errorf("an ordinary host was escaped: %q", href)
+	}
+	if !strings.Contains(href, `window.open('http://bookmarks.pi/save?u='`) {
+		t.Errorf("bookmarklet does not open the save endpoint: %q", href)
+	}
+}
+
 // TestBookmarkletSaveArrivesAsACrossSiteNavigation follows the bookmarklet
 // through: clicking it on a third-party page is a top-level GET to /save from
 // another origin, carrying no Authorization header — only the cookie, which the
@@ -130,7 +166,7 @@ func TestBookmarkletSaveArrivesAsACrossSiteNavigation(t *testing.T) {
 		"/save?u="+url.QueryEscape("https://third.example/page")+"&title="+url.QueryEscape("Third Party Page"),
 		nil, nil)
 	req.Header.Del("Authorization")
-	req.AddCookie(&http.Cookie{Name: "bm_token", Value: testToken})
+	req.AddCookie(&http.Cookie{Name: "bm_token", Value: app.SessionValue(testToken)})
 	req.Header.Set("Referer", "https://third.example/page")
 	req.Header.Set("Sec-Fetch-Site", "cross-site")
 
