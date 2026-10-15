@@ -56,6 +56,13 @@ func TestForwardedProtoAcceptsAProxyChain(t *testing.T) {
 // cannot read the response, so it learns nothing — and that the worst it can do
 // is add a row, since the fetcher refuses private addresses (see the SSRF guard
 // in internal/fetcher) and so cannot be turned into a probe of the LAN.
+//
+// Reviewed and left in place on 2026-10-15. The residual risk is a phishing
+// Bookmark: the attacker picks the URL and the Title, but the user must then
+// click it and type something, and an unasked-for Bookmark is visible in the
+// grid. That is low for one technical user on a tailnet. If the app is ever
+// given a public name, revisit: a confirm page on GET and a POST for the write
+// closes it, at the cost of one extra tap on every save.
 func TestACrossSiteSaveStillSavesByDesign(t *testing.T) {
 	h := newHandler(t, filepath.Join(t.TempDir(), "db.sqlite"), stubFetcher{title: "Internal Admin", ok: true})
 
