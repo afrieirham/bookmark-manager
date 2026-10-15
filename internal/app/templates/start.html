@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bookmarks</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#4f46e5">
+<link rel="icon" href="/static/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <style>
   :root{--bg:#f7f7f5;--ink:#1a1a18;--muted:#6b6b66;--line:#e6e5e1;--accent:#4f46e5;--soft:#eef0ff}
   *{box-sizing:border-box}
@@ -96,6 +100,13 @@
     });
   });
 })();
+
+// Register the service worker so the browser offers to install the app. Only in
+// a secure context: over plain HTTP (the MVP's deployment) there is nothing to
+// install, and registering would only log a failure.
+if ('serviceWorker' in navigator && window.isSecureContext) {
+  navigator.serviceWorker.register('/sw.js');
+}
 </script>
 </body>
 </html>

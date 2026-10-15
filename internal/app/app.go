@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"embed"
 	"html/template"
+	"io/fs"
 	"log"
 	"net/http"
 	"strconv"
@@ -17,6 +18,13 @@ import (
 
 //go:embed templates/*.html
 var templatesFS embed.FS
+
+// staticFS carries the PWA files: the manifest, the service worker, and the
+// icons. They are served so the app is installable once the operator serves
+// trusted HTTPS; over plain HTTP the browser simply withholds install and share.
+//
+//go:embed static
+var staticFS embed.FS
 
 // Fetcher looks up a page's Title. It never fails a request: ok reports whether
 // a Title was found, and the caller falls back to the host when it was not.
@@ -58,23 +66,35 @@ type Server struct {
 	fetcher Fetcher
 	cfg     Config
 	tmpl    *template.Template
+	static  http.Handler
 	now     func() time.Time
 }
 
 // New builds a Server from its dependencies and configuration.
 func New(store Store, fetcher Fetcher, cfg Config) *Server {
+	staticDir, err := fs.Sub(staticFS, "static")
+	if err != nil {
+		// The embedded path is fixed at build time, so this cannot fail at run time.
+		panic(err)
+	}
 	return &Server{
 		store:   store,
 		fetcher: fetcher,
 		cfg:     cfg,
 		tmpl:    template.Must(template.ParseFS(templatesFS, "templates/*.html")),
+		static:  http.StripPrefix(staticPrefix, http.FileServer(http.FS(staticDir))),
 		now:     time.Now,
 	}
 }
 
-// Handler returns the HTTP routes, all of them behind the shared secret.
+// Handler returns the HTTP routes. The PWA files are registered first, ahead of
+// the /{url...} catch-all that #18 adds last, so a bare-URL save can never
+// swallow them; known routes win over the wildcard either way.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET "+manifestPath, s.handleManifest)
+	mux.HandleFunc("GET "+serviceWorkerPath, s.handleServiceWorker)
+	mux.Handle("GET "+staticPrefix, s.static)
 	mux.HandleFunc("/", s.handleStart)
 	mux.HandleFunc("/save", s.handleSave)
 	mux.HandleFunc("POST /rename", s.handleRename)
@@ -82,6 +102,39 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET "+loginPath, s.handleLoginForm)
 	mux.HandleFunc("POST "+loginPath, s.handleLogin)
 	return s.authenticate(mux)
+}
+
+// PWA routes. The service worker must sit at the origin root so its scope is
+// "/"; a file under /static/ could only ever control /static/.
+const (
+	manifestPath      = "/manifest.webmanifest"
+	serviceWorkerPath = "/sw.js"
+	staticPrefix      = "/static/"
+)
+
+// handleManifest serves the web app manifest, which carries the Android
+// share_target that maps a shared link onto /save.
+func (s *Server) handleManifest(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/manifest+json")
+	serveEmbedded(w, "static/manifest.webmanifest")
+}
+
+// handleServiceWorker serves the pass-through service worker from the root, so
+// it claims scope "/" and the browser offers to install the app.
+func (s *Server) handleServiceWorker(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+	serveEmbedded(w, "static/sw.js")
+}
+
+// serveEmbedded writes a file that shipped inside the binary. A miss can only
+// mean a build error, so it is a 500 rather than a 404.
+func serveEmbedded(w http.ResponseWriter, name string) {
+	b, err := fs.ReadFile(staticFS, name)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	_, _ = w.Write(b)
 }
 
 type startData struct {
@@ -251,15 +304,31 @@ const cookieName = "bm_token"
 
 // authenticate wraps next so that every route needs the shared secret: the
 // Authorization header for API clients, the cookie for the web UI. The login
-// page stays open, or there would be no way in.
+// page and the PWA files stay open, or there would be no way in and no way to
+// install.
 func (s *Server) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.cfg.AuthDisabled || r.URL.Path == loginPath || s.authenticated(r) {
+		if s.cfg.AuthDisabled || s.isPublic(r.URL.Path) || s.authenticated(r) {
 			next.ServeHTTP(w, r)
 			return
 		}
 		s.refuse(w, r)
 	})
+}
+
+// isPublic reports whether a path is served without the shared secret. Besides
+// the login page, these are the PWA files. The manifest is fetched with
+// credentials mode "omit", so a browser sends no cookie for it: gating it behind
+// the Token would 401 that fetch and installability would never happen. The
+// manifest, service worker and icons hold no Bookmark data, so there is nothing
+// to protect. Saving stays gated: the share target lands on /save, which a
+// browser reaches as a top-level navigation that does carry the cookie.
+func (s *Server) isPublic(path string) bool {
+	switch path {
+	case loginPath, manifestPath, serviceWorkerPath:
+		return true
+	}
+	return strings.HasPrefix(path, staticPrefix)
 }
 
 // authenticated reports whether the request carries the shared secret, either
