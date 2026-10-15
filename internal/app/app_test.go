@@ -2,6 +2,7 @@ package app_test
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -31,14 +32,51 @@ func openStore(t *testing.T, dbPath string) *store.SQLite {
 	return st
 }
 
+// testToken is the shared secret every handler under test is built with.
+const testToken = "test-token"
+
+// newHandler builds a handler with the shared secret on, which is what an
+// operator gets by default.
 func newHandler(t *testing.T, dbPath string, fetch app.Fetcher) http.Handler {
 	t.Helper()
-	return app.New(openStore(t, dbPath), fetch, "").Handler()
+	return app.New(openStore(t, dbPath), fetch, app.Config{Token: testToken}).Handler()
 }
 
+// newOpenHandler builds a handler with authentication switched off.
+func newOpenHandler(t *testing.T, dbPath string, fetch app.Fetcher) http.Handler {
+	t.Helper()
+	return app.New(openStore(t, dbPath), fetch, app.Config{AuthDisabled: true}).Handler()
+}
+
+func serve(t *testing.T, h http.Handler, req *http.Request) *httptest.ResponseRecorder {
+	t.Helper()
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	return rr
+}
+
+// get and post carry the Token, so the tests about saving, renaming and the
+// grid stay about their own behaviour rather than about authentication. The
+// anonymous variants are for the tests that are about authentication.
 func get(t *testing.T, h http.Handler, target string, header map[string]string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, target, nil)
+	return serve(t, h, request(t, http.MethodGet, target, header, nil))
+}
+
+// getAnon issues a GET carrying no Token and no cookie.
+func getAnon(t *testing.T, h http.Handler, target string, header map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := request(t, http.MethodGet, target, header, nil)
+	req.Header.Del("Authorization")
+	return serve(t, h, req)
+}
+
+// request builds a request carrying the Token, so callers only describe what
+// makes their case different.
+func request(t *testing.T, method, target string, header map[string]string, body io.Reader) *http.Request {
+	t.Helper()
+	req := httptest.NewRequest(method, target, body)
+	req.Header.Set("Authorization", "Bearer "+testToken)
 	for k, v := range header {
 		if k == "Host" {
 			req.Host = v
@@ -46,9 +84,7 @@ func get(t *testing.T, h http.Handler, target string, header map[string]string) 
 		}
 		req.Header.Set(k, v)
 	}
-	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, req)
-	return rr
+	return req
 }
 
 func TestStartPageShowsPasteBox(t *testing.T) {
@@ -152,7 +188,7 @@ func TestBookmarksPersistAcrossRestarts(t *testing.T) {
 	get(t, h, "/save?u="+url.QueryEscape("https://example.com")+"&title="+url.QueryEscape("Persisted"), nil)
 
 	// A fresh store over the same file stands in for a restart.
-	restarted := app.New(openStore(t, dbPath), stubFetcher{}, "").Handler()
+	restarted := app.New(openStore(t, dbPath), stubFetcher{}, app.Config{Token: testToken}).Handler()
 	page := get(t, restarted, "/", nil).Body.String()
 	if !strings.Contains(page, "Persisted") {
 		t.Errorf("Bookmark did not survive a restart:\n%s", page)
@@ -175,11 +211,9 @@ func TestBaseURLHonoursForwardedProto(t *testing.T) {
 // application/x-www-form-urlencoded POST.
 func post(t *testing.T, h http.Handler, target string, form url.Values) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, target, strings.NewReader(form.Encode()))
+	req := request(t, http.MethodPost, target, nil, strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, req)
-	return rr
+	return serve(t, h, req)
 }
 
 func TestStartPageOffersRenameFormForEachBookmark(t *testing.T) {
@@ -234,7 +268,7 @@ func TestRenamePersists(t *testing.T) {
 	get(t, h, "/save?u="+url.QueryEscape("https://example.com")+"&title="+url.QueryEscape("Old Title"), nil)
 	post(t, h, "/rename", url.Values{"id": {"1"}, "title": {"Renamed"}})
 
-	restarted := app.New(openStore(t, dbPath), stubFetcher{}, "").Handler()
+	restarted := app.New(openStore(t, dbPath), stubFetcher{}, app.Config{Token: testToken}).Handler()
 	page := get(t, restarted, "/", nil).Body.String()
 	if !strings.Contains(page, "Renamed") {
 		t.Errorf("renamed Title did not survive a restart:\n%s", page)
