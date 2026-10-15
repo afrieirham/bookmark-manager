@@ -97,3 +97,30 @@ func Rename(b Bookmark, title string) (Bookmark, bool) {
 	b.Title = t
 	return b, true
 }
+
+// Reorder returns bookmarks in the order given by ids, the rule behind
+// POST /reorder. ok is false unless ids is exactly the set of existing ids —
+// no missing, unknown, or repeated id — so a stale or malformed drag can never
+// drop a Bookmark. Each Bookmark comes back with Position set to its new index;
+// everything else about it is untouched.
+func Reorder(existing []Bookmark, ids []int64) ([]Bookmark, bool) {
+	if len(ids) != len(existing) {
+		return nil, false
+	}
+	byID := make(map[int64]Bookmark, len(existing))
+	for _, b := range existing {
+		byID[b.ID] = b
+	}
+	ordered := make([]Bookmark, 0, len(ids))
+	seen := make(map[int64]bool, len(ids))
+	for i, id := range ids {
+		b, ok := byID[id]
+		if !ok || seen[id] {
+			return nil, false
+		}
+		seen[id] = true
+		b.Position = i
+		ordered = append(ordered, b)
+	}
+	return ordered, true
+}

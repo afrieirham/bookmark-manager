@@ -210,6 +210,36 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
+// handleReorder stores the grid order: the full list of Bookmark ids, in the
+// order they should appear, sent as a repeated form field by the drag-and-drop
+// script. The domain decides what the full order is, so a partial or stale list
+// still leaves every Bookmark on the grid.
+func (s *Server) handleReorder(w http.ResponseWriter, r *http.Request) {
+	existing, err := s.store.List(r.Context())
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+
+	ids := make([]int64, 0, len(r.PostForm["ids"]))
+	for _, raw := range r.PostForm["ids"] {
+		if id, err := strconv.ParseInt(raw, 10, 64); err == nil {
+			ids = append(ids, id)
+		}
+	}
+
+	ordered := domain.Reorder(existing, ids)
+	full := make([]int64, len(ordered))
+	for i, b := range ordered {
+		full[i] = b.ID
+	}
+	if err := s.store.Reorder(r.Context(), full); err != nil {
+		s.fail(w, err)
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
 // scheme reports the scheme the client used, as seen through a proxy.
 // X-Forwarded-Proto wins over the transport scheme.
 func (s *Server) scheme(r *http.Request) string {
