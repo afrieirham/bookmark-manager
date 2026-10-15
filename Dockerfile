@@ -3,10 +3,17 @@
 # ---------------------------------------------------------------------------
 # build stage
 # ---------------------------------------------------------------------------
-# go.mod declares `go 1.26.0`, so the builder must be 1.26 or newer; otherwise
-# the image build tries to download a toolchain at build time.
-FROM golang:1.26-alpine AS build
+# Pinned to $BUILDPLATFORM so buildx runs this stage on the host's own
+# architecture and cross-compiles, rather than emulating the target under QEMU.
+# That works because modernc.org/sqlite is a pure-Go driver (below), so GOARCH
+# is the only thing that has to change: an arm64 image builds in seconds instead
+# of minutes. go.mod declares `go 1.26.0`, so the builder must be 1.26 or newer
+# or the build tries to download a toolchain.
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
 WORKDIR /src
+
+ARG TARGETOS
+ARG TARGETARCH
 
 # Download modules first so this layer is cached across source edits.
 COPY go.mod go.sum ./
@@ -16,30 +23,38 @@ RUN go mod download
 # all the build needs.
 COPY . .
 
-# modernc.org/sqlite is a pure-Go driver, so CGO is not required: this produces
-# a fully static binary that needs no libc in the runtime image.
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/bookmarks .
+# CGO_ENABLED=0 keeps the binary fully static and needs no libc in the runtime
+# image, which is what lets the runtime stage stay tiny.
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build -trimpath -ldflags="-s -w" -o /out/bookmarks .
 
 # ---------------------------------------------------------------------------
 # runtime stage
 # ---------------------------------------------------------------------------
 FROM alpine:3.20
 
-# CA certificates so the page-<title> fetcher can reach https sites.
+# CA certificates so the page-<title> fetcher can reach https sites. The busybox
+# wget is deliberately kept: the compose healthcheck uses it.
 RUN apk add --no-cache ca-certificates
 
 COPY --from=build /out/bookmarks /usr/local/bin/bookmarks
 
-# The SQLite file lives on a mounted volume. Declaring /data creates the path in
-# the image; docker-compose bind-mounts the host directory over it.
+# The SQLite file lives on a mounted volume. /data is created and handed to the
+# unprivileged user here so a named volume — which inherits this directory's
+# ownership — works out of the box.
+RUN mkdir -p /data && chown 65532:65532 /data
 VOLUME ["/data"]
+
+# Run unprivileged. The binary only ever reads and writes its own SQLite file,
+# so nothing here needs root. A bind mount is judged by the host directory's own
+# ownership, so an operator mounting one must hand that directory to 65532 —
+# see deploy/README.md. To run as a different uid, override `user:` in compose.
+USER 65532:65532
+
 EXPOSE 8080
 
 # Defaults match main.go. docker-compose.yml sets these explicitly too.
 ENV PORT=8080 \
     DB_PATH=/data/bookmarks.sqlite
 
-# Runs as root so it can write the bind-mounted host directory out of the box.
-# To harden: `chown -R 65532:65532 /mnt/usb1/bookmarks` and add
-# `user: "65532:65532"` to the compose service. See deploy/README.md.
 ENTRYPOINT ["/usr/local/bin/bookmarks"]
