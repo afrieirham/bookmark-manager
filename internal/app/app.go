@@ -45,6 +45,7 @@ type Store interface {
 	Insert(ctx context.Context, b domain.Bookmark) (domain.Bookmark, error)
 	Rename(ctx context.Context, id int64, title string) error
 	Delete(ctx context.Context, id int64) error
+	Reorder(ctx context.Context, ids []int64) error
 }
 
 // Config is everything the Server takes from the environment.
@@ -99,6 +100,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/save", s.handleSave)
 	mux.HandleFunc("POST /rename", s.handleRename)
 	mux.HandleFunc("POST /delete", s.handleDelete)
+	mux.HandleFunc("POST /reorder", s.handleReorder)
 	mux.HandleFunc("GET "+loginPath, s.handleLoginForm)
 	mux.HandleFunc("POST "+loginPath, s.handleLogin)
 	return s.authenticate(mux)
@@ -259,6 +261,40 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, err)
 			return
 		}
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// handleReorder stores the grid order: the full list of Bookmark ids, in the
+// order they should appear, sent as a repeated form field by the drag-and-drop
+// script. The domain decides what the full order is, so a partial or stale list
+// still leaves every Bookmark on the grid.
+func (s *Server) handleReorder(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	existing, err := s.store.List(r.Context())
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+
+	ids := make([]int64, 0, len(r.PostForm["ids"]))
+	for _, raw := range r.PostForm["ids"] {
+		if id, err := strconv.ParseInt(raw, 10, 64); err == nil {
+			ids = append(ids, id)
+		}
+	}
+
+	ordered := domain.Reorder(existing, ids)
+	full := make([]int64, len(ordered))
+	for i, b := range ordered {
+		full[i] = b.ID
+	}
+	if err := s.store.Reorder(r.Context(), full); err != nil {
+		s.fail(w, err)
+		return
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }

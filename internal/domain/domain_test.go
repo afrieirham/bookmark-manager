@@ -153,3 +153,75 @@ func TestRenameIgnoresEmptyTitle(t *testing.T) {
 		})
 	}
 }
+
+func TestReorderAppliesTheGivenOrder(t *testing.T) {
+	existing := []domain.Bookmark{
+		{ID: 1, URL: "https://a.example", Title: "A", Position: 0},
+		{ID: 2, URL: "https://b.example", Title: "B", Position: 1},
+		{ID: 3, URL: "https://c.example", Title: "C", Position: 2},
+	}
+	got := domain.Reorder(existing, []int64{3, 1, 2})
+	wantIDs := []int64{3, 1, 2}
+	if len(got) != len(wantIDs) {
+		t.Fatalf("got %d Bookmarks, want %d", len(got), len(wantIDs))
+	}
+	for i, b := range got {
+		if b.ID != wantIDs[i] {
+			t.Errorf("position %d holds id %d, want %d", i, b.ID, wantIDs[i])
+		}
+		if b.Position != i {
+			t.Errorf("Bookmark %d has Position %d, want %d", b.ID, b.Position, i)
+		}
+	}
+}
+
+func TestReorderKeepsEachBookmarkIntact(t *testing.T) {
+	existing := []domain.Bookmark{
+		{ID: 1, URL: "https://a.example", Title: "A", Position: 0},
+		{ID: 2, URL: "https://b.example", Title: "B", Position: 1},
+	}
+	got := domain.Reorder(existing, []int64{2, 1})
+	if got[0].URL != "https://b.example" || got[0].Title != "B" {
+		t.Errorf("Reorder altered the Bookmark it moved: %+v", got[0])
+	}
+}
+
+func TestReorderKeepsBookmarksTheListLeavesOut(t *testing.T) {
+	existing := []domain.Bookmark{
+		{ID: 1, Position: 0},
+		{ID: 2, Position: 1},
+		{ID: 3, Position: 2},
+	}
+	// 3 is named first; 999 names nothing; 1 and 2 are left out and follow.
+	got := domain.Reorder(existing, []int64{3, 999})
+	wantIDs := []int64{3, 1, 2}
+	for i, b := range got {
+		if b.ID != wantIDs[i] {
+			t.Errorf("position %d holds id %d, want %d", i, b.ID, wantIDs[i])
+		}
+	}
+}
+
+func TestReorderIgnoresARepeatedID(t *testing.T) {
+	existing := []domain.Bookmark{
+		{ID: 1, Position: 0},
+		{ID: 2, Position: 1},
+		{ID: 3, Position: 2},
+	}
+	got := domain.Reorder(existing, []int64{2, 2, 1, 3})
+	wantIDs := []int64{2, 1, 3}
+	if len(got) != len(wantIDs) {
+		t.Fatalf("got %d Bookmarks, want %d", len(got), len(wantIDs))
+	}
+	for i, b := range got {
+		if b.ID != wantIDs[i] {
+			t.Errorf("position %d holds id %d, want %d", i, b.ID, wantIDs[i])
+		}
+	}
+}
+
+func TestReorderOfNothingIsEmpty(t *testing.T) {
+	if got := domain.Reorder(nil, []int64{1, 2}); len(got) != 0 {
+		t.Errorf("got %v, want no Bookmarks", got)
+	}
+}

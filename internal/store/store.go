@@ -124,3 +124,24 @@ func (s *SQLite) Delete(ctx context.Context, id int64) error {
 	}
 	return nil
 }
+
+// Reorder gives each Bookmark the position of its id in ids. It runs in one
+// transaction, so the grid never shows a half-applied order.
+func (s *SQLite) Reorder(ctx context.Context, ids []int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("reorder: %w", err)
+	}
+	defer tx.Rollback()
+
+	for i, id := range ids {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE bookmarks SET position = ? WHERE id = ?`, i, id); err != nil {
+			return fmt.Errorf("reorder: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("reorder: %w", err)
+	}
+	return nil
+}

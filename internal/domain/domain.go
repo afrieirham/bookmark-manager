@@ -97,3 +97,38 @@ func Rename(b Bookmark, title string) (Bookmark, bool) {
 	b.Title = t
 	return b, true
 }
+
+// Reorder returns bookmarks in the order given by ids, the rule behind
+// POST /reorder. ids names the Bookmarks that should come first, in order; an
+// id that names no Bookmark, or names one twice, is ignored. Every Bookmark
+// left out keeps its place after the named ones, in its existing order. So a
+// partial or stale list can never drop a Bookmark, and the result is always the
+// full set with contiguous positions. Each Bookmark comes back with Position
+// set to its new index; everything else about it is untouched.
+func Reorder(existing []Bookmark, ids []int64) []Bookmark {
+	byID := make(map[int64]Bookmark, len(existing))
+	for _, b := range existing {
+		byID[b.ID] = b
+	}
+	ordered := make([]Bookmark, 0, len(existing))
+	placed := make(map[int64]bool, len(existing))
+	for _, id := range ids {
+		b, ok := byID[id]
+		if !ok || placed[id] {
+			continue
+		}
+		placed[id] = true
+		ordered = append(ordered, b)
+	}
+	for _, b := range existing {
+		if placed[b.ID] {
+			continue
+		}
+		placed[b.ID] = true
+		ordered = append(ordered, b)
+	}
+	for i := range ordered {
+		ordered[i].Position = i
+	}
+	return ordered
+}

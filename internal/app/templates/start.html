@@ -24,8 +24,9 @@
   button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
   .pending{background:var(--soft);border:1px solid #c7cbff;border-radius:12px;padding:14px;margin-bottom:18px;font-weight:600}
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
-  .card{border:1px solid var(--line);border-radius:10px;padding:12px 13px;background:#fff}
+  .card{border:1px solid var(--line);border-radius:10px;padding:12px 13px;background:#fff;cursor:grab}
   .card.hot{border-color:var(--accent);box-shadow:0 0 0 3px var(--soft)}
+  .card.dragging{opacity:.4;cursor:grabbing}
   .card .t{font-weight:600;color:inherit;text-decoration:none;display:block;margin-bottom:3px}
   .card .t:hover{text-decoration:underline}
   .card .u{color:var(--muted);font-family:ui-monospace,Menlo,monospace;font-size:12px;word-break:break-all}
@@ -55,8 +56,8 @@
 
 <div class="grid">
 {{range .Bookmarks}}
-  <div class="card{{if and $.Pending (eq $.Pending.ID .ID)}} hot{{end}}" data-id="{{.ID}}">
-    <a class="t" href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a>
+  <div class="card{{if and $.Pending (eq $.Pending.ID .ID)}} hot{{end}}" data-id="{{.ID}}" draggable="true">
+    <a class="t" href="{{.URL}}" target="_blank" rel="noopener" draggable="false">{{.Title}}</a>
     <div class="u">{{.URL}}</div>
     <form class="rename" method="post" action="/rename">
       <input type="hidden" name="id" value="{{.ID}}">
@@ -98,6 +99,65 @@
         })
         .catch(function () { form.submit(); });
     });
+  });
+})();
+
+// Drag to reorder: the grid follows the pointer, and on drop the new order is
+// posted to /reorder. With JS off the stored order simply stands.
+(function () {
+  var grid = document.querySelector(".grid");
+  if (!grid) return;
+  var dragged = null;
+
+  function cards() {
+    return Array.prototype.slice.call(grid.querySelectorAll(".card"));
+  }
+
+  function save() {
+    var form = new FormData();
+    cards().forEach(function (card) { form.append("ids", card.dataset.id); });
+    fetch("/reorder", { method: "POST", body: form });
+  }
+
+  // The card whose centre sits nearest the pointer is where the dragged card
+  // belongs among its neighbours.
+  function nearest(x, y) {
+    var best = null, bestDist = Infinity;
+    cards().forEach(function (card) {
+      if (card === dragged) return;
+      var box = card.getBoundingClientRect();
+      var dx = x - (box.left + box.width / 2);
+      var dy = y - (box.top + box.height / 2);
+      var dist = dx * dx + dy * dy;
+      if (dist < bestDist) { bestDist = dist; best = card; }
+    });
+    return best;
+  }
+
+  cards().forEach(function (card) {
+    card.addEventListener("dragstart", function (e) {
+      dragged = card;
+      card.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+      // Firefox will not start a drag unless some data is set.
+      e.dataTransfer.setData("text/plain", card.dataset.id);
+    });
+    card.addEventListener("dragend", function () {
+      card.classList.remove("dragging");
+      dragged = null;
+      save();
+    });
+  });
+
+  grid.addEventListener("dragover", function (e) {
+    if (!dragged) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    var target = nearest(e.clientX, e.clientY);
+    if (!target) return;
+    var box = target.getBoundingClientRect();
+    var above = e.clientY < box.top + box.height / 2;
+    grid.insertBefore(dragged, above ? target : target.nextSibling);
   });
 })();
 
