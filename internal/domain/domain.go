@@ -85,3 +85,15 @@ func Save(existing []Bookmark, rawURL, givenTitle, fetchedTitle string, fetchedO
 	}
 	return SaveResult{Bookmark: b}, true
 }
+
+// Rename returns b with its Title set to title. A blank title is ignored: ok is
+// false and b is returned unchanged. Everything else about the Bookmark — its
+// URL, identity, and grid position — is untouched.
+func Rename(b Bookmark, title string) (Bookmark, bool) {
+	t := strings.TrimSpace(title)
+	if t == "" {
+		return b, false
+	}
+	b.Title = t
+	return b, true
+}

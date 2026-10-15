@@ -25,6 +25,11 @@
   .card .t{font-weight:600;color:inherit;text-decoration:none;display:block;margin-bottom:3px}
   .card .t:hover{text-decoration:underline}
   .card .u{color:var(--muted);font-family:ui-monospace,Menlo,monospace;font-size:12px;word-break:break-all}
+  .card form{margin:0}
+  .card .rename{display:flex;gap:6px;margin-top:8px}
+  .card .rename input{flex:1;min-width:0;font:inherit;font-size:13px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;background:#fff}
+  .card .delete{margin-top:6px}
+  .card .delete button{font-size:12px;padding:4px 10px;color:#b91c1c}
   .empty{color:var(--muted);font-style:italic}
 </style>
 </head>
@@ -49,11 +54,48 @@
   <div class="card{{if and $.Pending (eq $.Pending.ID .ID)}} hot{{end}}" data-id="{{.ID}}">
     <a class="t" href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a>
     <div class="u">{{.URL}}</div>
+    <form class="rename" method="post" action="/rename">
+      <input type="hidden" name="id" value="{{.ID}}">
+      <input name="title" value="{{.Title}}" aria-label="Title" autocomplete="off">
+      <button>Rename</button>
+    </form>
+    <form class="delete" method="post" action="/delete">
+      <input type="hidden" name="id" value="{{.ID}}">
+      <button>Remove</button>
+    </form>
   </div>
 {{else}}
   <div class="empty">No bookmarks yet.</div>
 {{end}}
 </div>
 </main>
+<script>
+// Inline rename and delete: intercept the forms so the page does not reload.
+// With JS off the same forms post to /rename and /delete and the server
+// redirects back to the Start page, so both paths do the same thing.
+(function () {
+  document.querySelectorAll("form.rename, form.delete").forEach(function (form) {
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      fetch(form.action, { method: "POST", body: new FormData(form) })
+        .then(function (res) { if (!res.ok) throw new Error(res.status); return res; })
+        .then(function () {
+          var card = form.closest(".card");
+          if (form.classList.contains("delete")) {
+            card.remove();
+            if (!document.querySelector(".card")) location.reload();
+            return;
+          }
+          var input = form.querySelector('input[name="title"]');
+          var title = input.value.trim();
+          if (title === "") { input.value = card.querySelector(".t").textContent; return; }
+          card.querySelector(".t").textContent = title;
+          input.value = title;
+        })
+        .catch(function () { form.submit(); });
+    });
+  });
+})();
+</script>
 </body>
 </html>

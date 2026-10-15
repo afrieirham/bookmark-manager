@@ -106,3 +106,21 @@ func (s *SQLite) Insert(ctx context.Context, b domain.Bookmark) (domain.Bookmark
 	b.ID = id
 	return b, nil
 }
+
+// Rename sets the Title of the Bookmark with id. Renaming a missing Bookmark is
+// a no-op; callers that care read it first.
+func (s *SQLite) Rename(ctx context.Context, id int64, title string) error {
+	if _, err := s.db.ExecContext(ctx,
+		`UPDATE bookmarks SET title = ? WHERE id = ?`, title, id); err != nil {
+		return fmt.Errorf("rename: %w", err)
+	}
+	return nil
+}
+
+// Delete removes the Bookmark with id. Deleting a missing Bookmark is a no-op.
+func (s *SQLite) Delete(ctx context.Context, id int64) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM bookmarks WHERE id = ?`, id); err != nil {
+		return fmt.Errorf("delete: %w", err)
+	}
+	return nil
+}

@@ -1,6 +1,7 @@
 package domain_test
 
 import (
+	"strconv"
 	"testing"
 	"time"
 
@@ -121,5 +122,34 @@ func TestSaveFindsDuplicateIgnoringFragment(t *testing.T) {
 func TestSaveRejectsUnusableURL(t *testing.T) {
 	if _, ok := domain.Save(nil, "", "", "", false, time.Now()); ok {
 		t.Error("empty URL reported as usable")
+	}
+}
+
+func TestRenameChangesTitle(t *testing.T) {
+	b := domain.Bookmark{ID: 1, URL: "https://example.com", Title: "Old"}
+	got, ok := domain.Rename(b, "New")
+	if !ok {
+		t.Fatal("Rename did not apply a non-empty Title")
+	}
+	if got.Title != "New" {
+		t.Errorf("Title = %q, want %q", got.Title, "New")
+	}
+	if got.ID != b.ID || got.URL != b.URL {
+		t.Errorf("Rename changed the Bookmark's identity: %+v", got)
+	}
+}
+
+func TestRenameIgnoresEmptyTitle(t *testing.T) {
+	for _, title := range []string{"", "   "} {
+		t.Run("title="+strconv.Quote(title), func(t *testing.T) {
+			b := domain.Bookmark{ID: 1, URL: "https://example.com", Title: "Keep"}
+			got, ok := domain.Rename(b, title)
+			if ok {
+				t.Errorf("Rename(%q) applied, want it ignored", title)
+			}
+			if got.Title != "Keep" {
+				t.Errorf("Rename(%q) changed Title to %q, want %q", title, got.Title, "Keep")
+			}
+		})
 	}
 }

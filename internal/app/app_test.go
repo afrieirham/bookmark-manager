@@ -170,3 +170,91 @@ func TestBaseURLHonoursForwardedProto(t *testing.T) {
 		t.Errorf("base URL not built from the request:\n%s", page)
 	}
 }
+
+// post submits an HTML form the way a browser would with JS off: a plain
+// application/x-www-form-urlencoded POST.
+func post(t *testing.T, h http.Handler, target string, form url.Values) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, target, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	return rr
+}
+
+func TestStartPageOffersRenameFormForEachBookmark(t *testing.T) {
+	h := newHandler(t, filepath.Join(t.TempDir(), "db.sqlite"), stubFetcher{})
+	get(t, h, "/save?u="+url.QueryEscape("https://example.com")+"&title="+url.QueryEscape("A Title"), nil)
+
+	page := get(t, h, "/", nil).Body.String()
+	if !strings.Contains(page, `action="/rename"`) {
+		t.Errorf("Start page has no rename form (JS-off rename impossible):\n%s", page)
+	}
+	if !strings.Contains(page, `name="title"`) {
+		t.Errorf("rename form has no Title field:\n%s", page)
+	}
+	if !strings.Contains(page, `action="/delete"`) {
+		t.Errorf("Start page has no delete form:\n%s", page)
+	}
+}
+
+func TestRenameChangesTheTitleOnTheStartPage(t *testing.T) {
+	h := newHandler(t, filepath.Join(t.TempDir(), "db.sqlite"), stubFetcher{})
+	get(t, h, "/save?u="+url.QueryEscape("https://example.com")+"&title="+url.QueryEscape("Old Title"), nil)
+
+	rr := post(t, h, "/rename", url.Values{"id": {"1"}, "title": {"New Title"}})
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303", rr.Code)
+	}
+
+	page := get(t, h, "/", nil).Body.String()
+	if !strings.Contains(page, "New Title") {
+		t.Errorf("renamed Title not shown:\n%s", page)
+	}
+	if strings.Contains(page, "Old Title") {
+		t.Errorf("old Title still shown after rename:\n%s", page)
+	}
+}
+
+func TestRenameToEmptyTitleIsIgnored(t *testing.T) {
+	h := newHandler(t, filepath.Join(t.TempDir(), "db.sqlite"), stubFetcher{})
+	get(t, h, "/save?u="+url.QueryEscape("https://example.com")+"&title="+url.QueryEscape("Keep Me"), nil)
+
+	post(t, h, "/rename", url.Values{"id": {"1"}, "title": {""}})
+
+	page := get(t, h, "/", nil).Body.String()
+	if !strings.Contains(page, "Keep Me") {
+		t.Errorf("an empty rename wiped the Title:\n%s", page)
+	}
+}
+
+func TestRenamePersists(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "db.sqlite")
+	h := newHandler(t, dbPath, stubFetcher{})
+	get(t, h, "/save?u="+url.QueryEscape("https://example.com")+"&title="+url.QueryEscape("Old Title"), nil)
+	post(t, h, "/rename", url.Values{"id": {"1"}, "title": {"Renamed"}})
+
+	restarted := app.New(openStore(t, dbPath), stubFetcher{}, "").Handler()
+	page := get(t, restarted, "/", nil).Body.String()
+	if !strings.Contains(page, "Renamed") {
+		t.Errorf("renamed Title did not survive a restart:\n%s", page)
+	}
+}
+
+func TestDeleteRemovesTheBookmarkFromTheGrid(t *testing.T) {
+	h := newHandler(t, filepath.Join(t.TempDir(), "db.sqlite"), stubFetcher{})
+	get(t, h, "/save?u="+url.QueryEscape("https://example.com")+"&title="+url.QueryEscape("Gone Soon"), nil)
+
+	rr := post(t, h, "/delete", url.Values{"id": {"1"}})
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303", rr.Code)
+	}
+
+	page := get(t, h, "/", nil).Body.String()
+	if strings.Contains(page, "Gone Soon") {
+		t.Errorf("deleted Bookmark still shown:\n%s", page)
+	}
+	if !strings.Contains(page, "No bookmarks yet") {
+		t.Errorf("grid not empty after deleting the only Bookmark:\n%s", page)
+	}
+}

@@ -34,6 +34,8 @@ type Store interface {
 	List(ctx context.Context) ([]domain.Bookmark, error)
 	Get(ctx context.Context, id int64) (domain.Bookmark, bool, error)
 	Insert(ctx context.Context, b domain.Bookmark) (domain.Bookmark, error)
+	Rename(ctx context.Context, id int64, title string) error
+	Delete(ctx context.Context, id int64) error
 }
 
 // Server holds the dependencies the handlers share.
@@ -63,6 +65,8 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handleStart)
 	mux.HandleFunc("/save", s.handleSave)
+	mux.HandleFunc("POST /rename", s.handleRename)
+	mux.HandleFunc("POST /delete", s.handleDelete)
 	return mux
 }
 
@@ -151,6 +155,45 @@ func savedLocation(id int64, duplicate bool) string {
 		loc += "&dup=1"
 	}
 	return loc
+}
+
+// handleRename applies a new Title to a Bookmark. It is the plain form target
+// the Start page posts to, so it works with JS off; an inline fetch uses the
+// same endpoint. A blank Title is ignored (the Bookmark is left alone).
+func (s *Server) handleRename(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PostFormValue("id"), 10, 64)
+	if err != nil {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	b, ok, err := s.store.Get(r.Context(), id)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if !ok {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	if renamed, applied := domain.Rename(b, r.PostFormValue("title")); applied {
+		if err := s.store.Rename(r.Context(), id, renamed.Title); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// handleDelete removes a Bookmark. Like handleRename it backs the plain form
+// fallback and the inline fetch alike.
+func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
+	if id, err := strconv.ParseInt(r.PostFormValue("id"), 10, 64); err == nil {
+		if err := s.store.Delete(r.Context(), id); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 // baseURLFor builds the app's public base URL from the request, so links are
