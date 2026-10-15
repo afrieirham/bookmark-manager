@@ -63,16 +63,16 @@ func before(s, cut string) string {
 
 // TestBookmarkletTargetsTheHostItWasServedFrom is the "works on any deployment"
 // criterion: the link is generated per request, so the same binary serves
-// bookmarks.pi and anything else without reconfiguration.
+// bookmarks.example.com and anything else without reconfiguration.
 func TestBookmarkletTargetsTheHostItWasServedFrom(t *testing.T) {
 	h := newHandler(t, filepath.Join(t.TempDir(), "db.sqlite"), stubFetcher{})
 
 	page := get(t, h, "/", map[string]string{
-		"Host":              "bookmarks.pi",
+		"Host":              "bookmarks.example.com",
 		"X-Forwarded-Proto": "https",
 	}).Body.String()
 
-	if href := bookmarkletHref(t, page); !strings.Contains(href, "https://bookmarks.pi/save?u=") {
+	if href := bookmarkletHref(t, page); !strings.Contains(href, "https://bookmarks.example.com/save?u=") {
 		t.Errorf("bookmarklet does not target the host it was served from: %q", href)
 	}
 }
@@ -145,11 +145,11 @@ func TestBookmarkletEscapesAHostileHost(t *testing.T) {
 func TestBookmarkletLeavesAnOrdinaryHostAlone(t *testing.T) {
 	h := newHandler(t, filepath.Join(t.TempDir(), "db.sqlite"), stubFetcher{})
 
-	href := bookmarkletHref(t, get(t, h, "/", map[string]string{"Host": "bookmarks.pi"}).Body.String())
+	href := bookmarkletHref(t, get(t, h, "/", map[string]string{"Host": "bookmarks.example.com"}).Body.String())
 	if strings.Contains(href, `\`) {
 		t.Errorf("an ordinary host was escaped: %q", href)
 	}
-	if !strings.Contains(href, `window.open('http://bookmarks.pi/save?u='`) {
+	if !strings.Contains(href, `window.open('http://bookmarks.example.com/save?u='`) {
 		t.Errorf("bookmarklet does not open the save endpoint: %q", href)
 	}
 }
