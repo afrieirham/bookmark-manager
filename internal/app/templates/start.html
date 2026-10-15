@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bookmarks</title>
+<style>
+  :root{--bg:#f7f7f5;--ink:#1a1a18;--muted:#6b6b66;--line:#e6e5e1;--accent:#4f46e5;--soft:#eef0ff}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  main{max-width:860px;margin:0 auto;padding:40px 20px 80px}
+  h1{font-size:24px;margin:0 0 4px}
+  .hint{color:var(--muted);font-size:14px}
+  .error{color:#b91c1c;font-size:14px}
+  .tools{display:flex;gap:12px;align-items:center;margin:16px 0}
+  .bmk{display:inline-block;text-decoration:none;font-weight:600;font-size:14px;padding:8px 14px;border-radius:9px;background:var(--soft);border:1px dashed #b9bdf5;color:var(--accent)}
+  .paste{display:flex;gap:8px;margin:8px 0 24px}
+  .paste input{flex:1;font:inherit;font-size:15px;padding:8px 12px;border:1px solid var(--line);border-radius:9px;background:#fff}
+  button{font:inherit;font-size:14px;padding:8px 14px;border-radius:9px;border:1px solid var(--line);background:#fff;cursor:pointer}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .pending{background:var(--soft);border:1px solid #c7cbff;border-radius:12px;padding:14px;margin-bottom:18px;font-weight:600}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+  .card{border:1px solid var(--line);border-radius:10px;padding:12px 13px;background:#fff}
+  .card.hot{border-color:var(--accent);box-shadow:0 0 0 3px var(--soft)}
+  .card .t{font-weight:600;color:inherit;text-decoration:none;display:block;margin-bottom:3px}
+  .card .t:hover{text-decoration:underline}
+  .card .u{color:var(--muted);font-family:ui-monospace,Menlo,monospace;font-size:12px;word-break:break-all}
+  .empty{color:var(--muted);font-style:italic}
+</style>
+</head>
+<body>
+<main>
+<h1>Bookmarks</h1>
+{{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+{{if .Pending}}<div class="pending">{{if .Duplicate}}Already saved — rename it?{{else}}Saved — rename it?{{end}}</div>{{end}}
+
+<div class="tools">
+  <a class="bmk" href="{{.Bookmarklet}}" draggable="true">★ Save to app</a>
+  <span class="hint">← drag me to your bookmarks bar</span>
+</div>
+
+<form class="paste" method="get" action="/save">
+  <input name="u" placeholder="…or paste a URL here" autocomplete="off" autofocus>
+  <button class="primary">Save</button>
+</form>
+
+<div class="grid">
+{{range .Bookmarks}}
+  <div class="card{{if and $.Pending (eq $.Pending.ID .ID)}} hot{{end}}" data-id="{{.ID}}">
+    <a class="t" href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a>
+    <div class="u">{{.URL}}</div>
+  </div>
+{{else}}
+  <div class="empty">No bookmarks yet.</div>
+{{end}}
+</div>
+</main>
+</body>
+</html>
