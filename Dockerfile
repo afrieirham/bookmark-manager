@@ -31,7 +31,9 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
 # ---------------------------------------------------------------------------
 # runtime stage
 # ---------------------------------------------------------------------------
-FROM alpine:3.20
+# A supported Alpine release: 3.20 stopped receiving security updates in April
+# 2026, so a published image must not sit on it.
+FROM alpine:3.24
 
 # CA certificates so the page-<title> fetcher can reach https sites. The busybox
 # wget is deliberately kept: the compose healthcheck uses it.

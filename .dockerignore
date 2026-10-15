@@ -9,3 +9,7 @@ AGENTS.md
 GLOSSARY.md
 *.sqlite
 *.sqlite-journal
+
+# CI configuration: the image does not need it, and leaving it in means every
+# workflow edit invalidates the `COPY . .` layer and forces a full rebuild.
+.github/
