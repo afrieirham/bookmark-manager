@@ -93,9 +93,9 @@ func New(store Store, fetcher Fetcher, cfg Config) *Server {
 	}
 }
 
-// Handler returns the HTTP routes. The PWA files are registered first, ahead of
-// the /{url...} catch-all that #18 adds last, so a bare-URL save can never
-// swallow them; known routes win over the wildcard either way.
+// Handler returns the HTTP routes. The fixed-path routes are registered first,
+// ahead of the /{url...} catch-all that #18 adds last, so a bare-URL save can
+// never swallow them; known routes win over the wildcard either way.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+healthPath, s.handleHealth)
@@ -120,8 +120,13 @@ func (s *Server) Handler() http.Handler {
 	return s.authenticate(mux)
 }
 
-// PWA routes. The service worker must sit at the origin root so its scope is
-// "/"; a file under /static/ could only ever control /static/.
+// Routes served from a fixed path: the health probe and the PWA files. The
+// service worker must sit at the origin root so its scope is "/"; a file under
+// /static/ could only ever control /static/.
+//
+// Each is listed again in isKnownRoute and isPublic, which is the Shotgun
+// Surgery #23 collapses into one table of routes; adding a path here means
+// editing three places until then.
 const (
 	healthPath        = "/healthz"
 	manifestPath      = "/manifest.webmanifest"
@@ -129,13 +134,12 @@ const (
 	staticPrefix      = "/static/"
 )
 
-// handleHealth reports whether the app can serve, for an orchestrator's probe
-// (a compose healthcheck, a PaaS liveness route). It answers 200 only when the
-// store can be read, so it catches the failure that leaves the process running
-// but broken — an unmounted, read-only or full volume under the SQLite file —
-// rather than merely proving the TCP port is open. The body is fixed text: the
-// route is public, so it carries nothing an unauthenticated caller should not
-// see, not even how many Bookmarks exist.
+// handleHealth reports whether the app can serve, for an orchestrator's probe.
+// It reads the store rather than returning a bare 200, so what it catches is the
+// state that leaves the process running but broken — an unmounted, read-only or
+// full volume under the SQLite file — instead of only proving the port is open.
+// The body is fixed text, because the route is public: it carries nothing an
+// unauthenticated caller should not see, not even how many Bookmarks exist.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if _, err := s.store.List(r.Context()); err != nil {
 		log.Printf("app: health: %v", err)

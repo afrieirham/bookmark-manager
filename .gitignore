@@ -9,6 +9,10 @@
 # The operator's secret. .env.example is the committed template.
 .env
 
+# The default bind mount from docker-compose.yml. It holds the SQLite file,
+# which the rule above covers, but the directory itself would still show up.
+/data/
+
 # Build output.
 /bookmarks
 /dist/

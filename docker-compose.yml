@@ -1,15 +1,18 @@
 # Deployment example for the bookmark manager.
 #
 #   cp .env.example .env      # then edit TOKEN
+#   mkdir -p data && sudo chown -R 65532:65532 data
 #   docker compose up -d
 #
 # The app then listens on http://localhost:8080/ (see deploy/README.md).
 services:
   bookmarks:
-    # The published multi-arch image (linux/amd64, linux/arm64). To build from a
-    # checkout of this repo instead, comment out `image:` and uncomment `build:`.
-    image: ghcr.io/afrieirham/bookmark-manager:latest
-    # build: .
+    # Built from this checkout, so a fresh `git clone` plus `docker compose up -d`
+    # works on its own. To run the released image instead, comment out `build:`
+    # and uncomment `image:` — note that the ghcr package must be public for the
+    # pull to succeed, which is a one-time step in its package settings.
+    build: .
+    # image: ghcr.io/afrieirham/bookmark-manager:latest
     restart: unless-stopped
     ports:
       - "8080:8080"
@@ -18,9 +21,9 @@ services:
       DB_PATH: "/data/bookmarks.sqlite"
 
       # Public base URL the app builds links with. Leave unset to derive it from
-      # each request (Host + X-Forwarded-Proto) — the default, and correct when
-      # the proxy passes the real Host through. Set it only when the proxy
-      # presents a different public address than the request Host.
+      # each request (Host + X-Forwarded-Proto), which is right whenever the
+      # proxy passes the real Host through; set it only when the public address
+      # differs from the request Host. deploy/README.md explains it at length.
       # BASE_URL: "https://bookmarks.example.com"
 
       # Shared secret. Auth is ON by default, so a value is required: the app
@@ -34,17 +37,22 @@ services:
       # port.
       # AUTH_DISABLED: "1"
     volumes:
-      # A named volume holds the SQLite file and survives `docker compose down`.
-      # The image runs as uid 65532 and a named volume inherits the ownership of
-      # /data in the image, so this works with no chown.
+      # SQLite is bind-mounted to a host path: ./data, beside this file, on the
+      # machine running compose. The file is then somewhere you can back up
+      # directly.
       #
-      # To keep the file somewhere you back up yourself, use a bind mount
-      # instead — `- ./data:/data` — and make the directory writable by the
-      # container's uid first: `sudo mkdir -p ./data && sudo chown -R 65532:65532 ./data`.
-      - bookmarks-data:/data
+      # The image runs as uid 65532, so this directory must be writable by it or
+      # the app exits at startup:
+      #   mkdir -p data && sudo chown -R 65532:65532 data
+      #
+      # A Docker-managed volume needs no chown but keeps the file where only
+      # Docker can reach it — swap this line and uncomment `volumes:` below:
+      #   - bookmarks-data:/data
+      - ./data:/data
     healthcheck:
-      # /healthz answers 200 only when the store can be read, so a restart loop
-      # or a wedged volume shows up as unhealthy rather than as silent breakage.
+      # Probes /healthz, which answers 200 only while the store is readable, so
+      # a restart loop or a wedged volume shows up as unhealthy rather than as
+      # silent breakage. deploy/README.md has the full description.
       # $$ escapes the substitution so the container's own shell expands PORT,
       # not compose on the host: the probe must follow PORT if it is changed here.
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:$${PORT:-8080}/healthz || exit 1"]
@@ -53,5 +61,6 @@ services:
       retries: 3
       start_period: 5s
 
-volumes:
-  bookmarks-data:
+# Uncomment with the named-volume alternative above.
+# volumes:
+#   bookmarks-data:

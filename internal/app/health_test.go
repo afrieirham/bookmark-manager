@@ -12,10 +12,8 @@ import (
 	"github.com/afrieirham/bookmark-manager/internal/domain"
 )
 
-// A health route exists so an orchestrator (a compose healthcheck, a PaaS
-// probe) can ask whether the app can serve. It must answer before
-// authentication: the probe has no Token, and every deployment would otherwise
-// be declared unhealthy while serving fine.
+// The probe holds no Token, so the route must answer before authentication:
+// gating it would declare every deployment unhealthy while it serves fine.
 func TestHealthzAnswersWithoutTheToken(t *testing.T) {
 	h := newHandler(t, filepath.Join(t.TempDir(), "db.sqlite"), stubFetcher{})
 

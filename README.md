@@ -1,6 +1,6 @@
 # Bookmark Manager
 
-A self-hosted, single-user start page: one Go binary with SQLite inside.
+A self-hosted, single-user Start page: one Go binary with SQLite inside.
 
 ![MIT](https://img.shields.io/badge/license-MIT-blue)
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8)
@@ -12,7 +12,7 @@ nothing from a CDN either.
 
 ## What it does
 
-- **A start page.** Your saved URLs as a grid, at the app root.
+- **A Start page.** Your saved URLs as a grid, at the app root.
 - **Several ways to save.** A paste box on the page, a bare-URL alias
   (`/example.com/deep/page` saves that URL), a draggable bookmarklet, and an
   Android share target, so a link reaches the app straight from the share sheet.
@@ -47,17 +47,30 @@ docker run -d --name bookmarks \
 
 Then open <http://localhost:8080/> and enter the Token.
 
+That uses a Docker-managed volume, so there is nothing to `chown`. The compose
+path below bind-mounts a host directory instead, so the SQLite file is somewhere
+you can back up directly — which is why that one does need a `chown`.
+
 ### With Compose
 
 ```sh
 git clone https://github.com/afrieirham/bookmark-manager
 cd bookmark-manager
-cp .env.example .env      # set TOKEN
+cp .env.example .env                              # set TOKEN
+mkdir -p data && sudo chown -R 65532:65532 data   # the container runs unprivileged
 docker compose up -d
 ```
 
-The compose file pulls the published image; comment out `image:` and uncomment
-`build:` in it to build from your checkout instead.
+The `data` directory is a bind mount, so the SQLite file sits beside the compose
+file where you can back it up directly. The image runs as uid `65532` rather
+than root, which is why it has to own that directory — without the `chown` the
+app exits at startup saying it cannot open the database. If you would rather not
+manage a host directory, swap the volume line for the Docker-managed alternative
+described in the file, which needs no `chown`.
+
+The compose file builds from your checkout, so this path never depends on the
+published image. To run the released image instead, comment out `build:` and
+uncomment `image:` in the file.
 
 ## Configuration
 
@@ -96,9 +109,9 @@ self-signed certificate is not enough.
 
 ## Health check
 
-`GET /healthz` returns `200` when the app can read its store and `503` when it
-cannot, so a bad volume shows up as unhealthy rather than as silent breakage. It
-is served without the Token, so a probe needs no credentials.
+`GET /healthz` reports whether the app can serve, and needs no Token, so a probe
+can point straight at it. [`deploy/README.md`](deploy/README.md) says what it
+checks and why.
 
 ## Development
 

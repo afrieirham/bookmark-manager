@@ -9,7 +9,7 @@ Artifacts:
 | File | Purpose |
 |---|---|
 | [`Dockerfile`](../Dockerfile) | Multi-stage build; static binary, `CGO_ENABLED=0`, runs unprivileged. |
-| [`docker-compose.yml`](../docker-compose.yml) | Compose service pulling the published image, with a named volume for SQLite. |
+| [`docker-compose.yml`](../docker-compose.yml) | Compose service built from the checkout, with a bind mount for SQLite. |
 | [`.env.example`](../.env.example) | Copy to `.env` and set `TOKEN`. |
 | [`nginx.conf`](nginx.conf) | Example nginx `server` block (plain HTTP). |
 
@@ -54,44 +54,69 @@ value.
 ## Run with Docker Compose
 
 ```sh
-cp .env.example .env      # then edit TOKEN
+cp .env.example .env                              # then edit TOKEN
+mkdir -p data && sudo chown -R 65532:65532 data   # the container runs unprivileged
 docker compose up -d
 ```
 
-The app is then at <http://localhost:8080/>. Compose pulls
-`ghcr.io/afrieirham/bookmark-manager:latest`, which is built for `linux/amd64`
-and `linux/arm64`, so it runs on a VPS or an ARM box such as a Raspberry Pi
-without a local build.
+The app is then at <http://localhost:8080/>. Compose builds the image from the
+checkout, so this path needs no registry access. The published
+`ghcr.io/afrieirham/bookmark-manager:latest` runs instead when you swap `build:`
+for `image:` — see **Run the published image** below. Either way the image is
+built for `linux/amd64` and `linux/arm64`, so it runs on a VPS or an ARM box
+such as a Raspberry Pi.
 
-The SQLite file lives in the `bookmarks-data` named volume and survives
-`docker compose down`. Backups are the operator's job (the spec has no
-app-level backup); `docker compose exec bookmarks cp /data/bookmarks.sqlite`
-followed by `docker cp` is enough to lift a copy out.
+### Storage: bind mount or named volume
 
-### Storage: named volume or bind mount
+The default is a **bind mount**: SQLite lands at `./data/bookmarks.sqlite`, on
+the machine running compose, where you can back it up directly. A bind mount is
+judged by the host directory's ownership rather than the image's, so it has to be
+handed to the container's uid — that is the `chown` above. Without it the
+container starts, fails to open the SQLite file, and exits; `/healthz` reports it
+unhealthy if the failure happens later.
 
-The default compose file uses a **named volume**, which needs no setup: the
-image hands `/data` to uid `65532`, and a named volume inherits that ownership.
+A **named volume** (`- bookmarks-data:/data`) needs no `chown`: the image hands
+`/data` to uid `65532`, and a named volume inherits that ownership. Choose it
+when you would rather not manage a host directory, and accept that the file then
+lives only where Docker can reach it. `docker-compose.yml` describes the swap.
 
-A **bind mount** (`- ./data:/data`) works too, and is the right choice when you
-want the file somewhere you already back up. A bind mount is judged by the host
-directory's own ownership, not the image's, so hand it to the container's uid
-first:
+The image runs unprivileged by default. Nothing in it needs root; to run as a
+different uid entirely, override `user:` in the compose service.
+
+### Back up the SQLite file
+
+Copying the file while the app is writing to it can capture a torn database, so
+stop the service first:
 
 ```sh
-sudo mkdir -p ./data
-sudo chown -R 65532:65532 ./data
+docker compose stop bookmarks
+cp ./data/bookmarks.sqlite ./bookmarks.sqlite.bak
+docker compose start bookmarks
 ```
 
-Without that the container starts and then fails to open the SQLite file. To run
-as a different uid entirely, override `user:` in the compose service.
+If you chose the named volume, the file is not on the host, so the copy has to
+go through the container. `docker compose cp` takes the *service* name, which is
+what makes it work when the container name is generated:
 
-The image runs unprivileged by default. Nothing in it needs root.
+```sh
+docker compose stop bookmarks
+docker compose cp bookmarks:/data/bookmarks.sqlite ./bookmarks.sqlite.bak
+docker compose start bookmarks
+```
 
-### Build from source instead
+Backups are otherwise the operator's job: the spec has no app-level backup.
 
-To run a checkout rather than the published image, comment out `image:` and
-uncomment `build:` in `docker-compose.yml`, then `docker compose up --build`.
+### Run the published image
+
+To run the released image rather than building the checkout, comment out
+`build:` and uncomment `image:` in `docker-compose.yml`, then:
+
+```sh
+docker compose pull && docker compose up -d
+```
+
+The ghcr package has to be public for that pull to succeed — a one-time step in
+its package settings, since the first push creates it private.
 
 ## Put it behind a reverse proxy
 
@@ -118,6 +143,14 @@ as silent breakage. It is served without the Token, so a probe needs no secret
 in its configuration. The compose service wires it in as a `healthcheck`.
 
 ## Verifying a deployment (human checklist)
+
+Every step below is **unrun**: this was written in an environment with no Docker
+daemon, so nothing here has been through the image. What was exercised was the
+binary on the host — it cross-compiles for `linux/amd64` and `linux/arm64` with
+`CGO_ENABLED=0`, `/healthz` answers `200` without a Token while `/` still
+redirects to `/login`, and the healthcheck command's exit codes were checked
+against a running instance. The steps that go through compose, the proxy or a
+browser are reasoning, not observations. Run them before trusting a deployment.
 
 1. `docker compose up -d` starts the container, and `docker compose ps` reports
    it as `healthy` within a minute.
