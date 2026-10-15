@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bookmarks</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#4f46e5">
+<link rel="icon" href="/static/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<style>
+  :root{--bg:#f7f7f5;--ink:#1a1a18;--muted:#6b6b66;--line:#e6e5e1;--accent:#4f46e5;--soft:#eef0ff}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  main{max-width:860px;margin:0 auto;padding:40px 20px 80px}
+  h1{font-size:24px;margin:0 0 4px}
+  .hint{color:var(--muted);font-size:14px}
+  .error{color:#b91c1c;font-size:14px}
+  .tools{display:flex;gap:12px;align-items:center;margin:16px 0}
+  .bmk{display:inline-block;text-decoration:none;font-weight:600;font-size:14px;padding:8px 14px;border-radius:9px;background:var(--soft);border:1px dashed #b9bdf5;color:var(--accent)}
+  .paste{display:flex;gap:8px;margin:8px 0 24px}
+  .paste input{flex:1;font:inherit;font-size:15px;padding:8px 12px;border:1px solid var(--line);border-radius:9px;background:#fff}
+  button{font:inherit;font-size:14px;padding:8px 14px;border-radius:9px;border:1px solid var(--line);background:#fff;cursor:pointer}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .pending{background:var(--soft);border:1px solid #c7cbff;border-radius:12px;padding:14px;margin-bottom:18px;font-weight:600}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+  .card{border:1px solid var(--line);border-radius:10px;padding:12px 13px;background:#fff;cursor:grab}
+  .card.hot{border-color:var(--accent);box-shadow:0 0 0 3px var(--soft)}
+  .card.dragging{opacity:.4;cursor:grabbing}
+  .card .t{font-weight:600;color:inherit;text-decoration:none;display:block;margin-bottom:3px}
+  .card .t:hover{text-decoration:underline}
+  .card .u{color:var(--muted);font-family:ui-monospace,Menlo,monospace;font-size:12px;word-break:break-all}
+  .card form{margin:0}
+  .card .rename{display:flex;gap:6px;margin-top:8px}
+  .card .rename input{flex:1;min-width:0;font:inherit;font-size:13px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;background:#fff}
+  .card .delete{margin-top:6px}
+  .card .delete button{font-size:12px;padding:4px 10px;color:#b91c1c}
+  .empty{color:var(--muted);font-style:italic}
+</style>
+</head>
+<body>
+<main>
+<h1>Bookmarks</h1>
+{{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+{{if .Pending}}<div class="pending">{{if .Duplicate}}Already saved — rename it?{{else}}Saved — rename it?{{end}}</div>{{end}}
+
+<div class="tools">
+  <a class="bmk" href="{{.Bookmarklet}}" draggable="true">★ Save to app</a>
+  <span class="hint">← drag me to your bookmarks bar</span>
+</div>
+
+<form class="paste" method="get" action="/save">
+  <input name="u" placeholder="…or paste a URL here" autocomplete="off" autofocus>
+  <button class="primary">Save</button>
+</form>
+<p class="hint">Save by pasting a URL, or by opening /&lt;url&gt;. A URL containing ? or # must use the paste box or /save?u=.</p>
+
+<div class="grid">
+{{range .Bookmarks}}
+  <div class="card{{if and $.Pending (eq $.Pending.ID .ID)}} hot{{end}}" data-id="{{.ID}}" draggable="true">
+    <a class="t" href="{{.URL}}" target="_blank" rel="noopener" draggable="false">{{.Title}}</a>
+    <div class="u">{{.URL}}</div>
+    <form class="rename" method="post" action="/rename">
+      <input type="hidden" name="id" value="{{.ID}}">
+      <input name="title" value="{{.Title}}" aria-label="Title" autocomplete="off">
+      <button>Rename</button>
+    </form>
+    <form class="delete" method="post" action="/delete">
+      <input type="hidden" name="id" value="{{.ID}}">
+      <button>Remove</button>
+    </form>
+  </div>
+{{else}}
+  <div class="empty">No bookmarks yet.</div>
+{{end}}
+</div>
+</main>
+<script>
+// Inline rename and delete: intercept the forms so the page does not reload.
+// With JS off the same forms post to /rename and /delete and the server
+// redirects back to the Start page, so both paths do the same thing.
+(function () {
+  document.querySelectorAll("form.rename, form.delete").forEach(function (form) {
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      fetch(form.action, { method: "POST", body: new FormData(form) })
+        .then(function (res) { if (!res.ok) throw new Error(res.status); return res; })
+        .then(function () {
+          var card = form.closest(".card");
+          if (form.classList.contains("delete")) {
+            card.remove();
+            if (!document.querySelector(".card")) location.reload();
+            return;
+          }
+          var input = form.querySelector('input[name="title"]');
+          var title = input.value.trim();
+          if (title === "") { input.value = card.querySelector(".t").textContent; return; }
+          card.querySelector(".t").textContent = title;
+          input.value = title;
+        })
+        .catch(function () { form.submit(); });
+    });
+  });
+})();
+
+// Drag to reorder: the grid follows the pointer, and on drop the new order is
+// posted to /reorder. With JS off the stored order simply stands.
+(function () {
+  var grid = document.querySelector(".grid");
+  if (!grid) return;
+  var dragged = null;
+
+  function cards() {
+    return Array.prototype.slice.call(grid.querySelectorAll(".card"));
+  }
+
+  function save() {
+    var form = new FormData();
+    cards().forEach(function (card) { form.append("ids", card.dataset.id); });
+    fetch("/reorder", { method: "POST", body: form });
+  }
+
+  // The card whose centre sits nearest the pointer is where the dragged card
+  // belongs among its neighbours.
+  function nearest(x, y) {
+    var best = null, bestDist = Infinity;
+    cards().forEach(function (card) {
+      if (card === dragged) return;
+      var box = card.getBoundingClientRect();
+      var dx = x - (box.left + box.width / 2);
+      var dy = y - (box.top + box.height / 2);
+      var dist = dx * dx + dy * dy;
+      if (dist < bestDist) { bestDist = dist; best = card; }
+    });
+    return best;
+  }
+
+  cards().forEach(function (card) {
+    card.addEventListener("dragstart", function (e) {
+      dragged = card;
+      card.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+      // Firefox will not start a drag unless some data is set.
+      e.dataTransfer.setData("text/plain", card.dataset.id);
+    });
+    card.addEventListener("dragend", function () {
+      card.classList.remove("dragging");
+      dragged = null;
+      save();
+    });
+  });
+
+  grid.addEventListener("dragover", function (e) {
+    if (!dragged) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    var target = nearest(e.clientX, e.clientY);
+    if (!target) return;
+    var box = target.getBoundingClientRect();
+    var above = e.clientY < box.top + box.height / 2;
+    grid.insertBefore(dragged, above ? target : target.nextSibling);
+  });
+})();
+
+// Register the service worker so the browser offers to install the app. Only in
+// a secure context: over plain HTTP (the MVP's deployment) there is nothing to
+// install, and registering would only log a failure.
+if ('serviceWorker' in navigator && window.isSecureContext) {
+  navigator.serviceWorker.register('/sw.js');
+}
+</script>
+</body>
+</html>
