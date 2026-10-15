@@ -21,9 +21,17 @@ type HTTP struct {
 	client *http.Client
 }
 
-// New returns an HTTP fetcher with a short timeout.
-func New() *HTTP {
-	return &HTTP{client: &http.Client{Timeout: 5 * time.Second}}
+// DefaultTimeout bounds how long a page read may take. A save waits on it, so it
+// stays short: a slow page falls back to the hostname rather than holding up the
+// redirect.
+const DefaultTimeout = 5 * time.Second
+
+// New returns an HTTP fetcher with DefaultTimeout.
+func New() *HTTP { return NewWithTimeout(DefaultTimeout) }
+
+// NewWithTimeout returns an HTTP fetcher that gives up on a page after d.
+func NewWithTimeout(d time.Duration) *HTTP {
+	return &HTTP{client: &http.Client{Timeout: d}}
 }
 
 // Title returns the page's <title> text, or ok=false when it cannot be read.

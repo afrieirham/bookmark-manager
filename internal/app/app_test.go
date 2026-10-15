@@ -292,3 +292,26 @@ func TestDeleteRemovesTheBookmarkFromTheGrid(t *testing.T) {
 		t.Errorf("grid not empty after deleting the only Bookmark:\n%s", page)
 	}
 }
+
+func TestSaveFallsBackToTheHostWhenTheFetchFails(t *testing.T) {
+	h := newHandler(t, filepath.Join(t.TempDir(), "db.sqlite"), stubFetcher{ok: false})
+
+	rr := get(t, h, "/save?u="+url.QueryEscape("https://www.example.com/deep/page"), nil)
+	page := get(t, h, rr.Header().Get("Location"), nil).Body.String()
+	// Assert the Title itself, not the URL shown beneath it.
+	if !strings.Contains(page, ">example.com</a>") {
+		t.Errorf("Title did not fall back to the host:\n%s", page)
+	}
+}
+
+func TestSaveDoesNotFetchWhenATitleIsGiven(t *testing.T) {
+	var asked bool
+	h := newHandler(t, filepath.Join(t.TempDir(), "db.sqlite"), app.FetcherFunc(
+		func(context.Context, string) (string, bool) { asked = true; return "", false },
+	))
+
+	get(t, h, "/save?u="+url.QueryEscape("https://example.com")+"&title="+url.QueryEscape("Given"), nil)
+	if asked {
+		t.Error("the page was fetched even though a Title was given")
+	}
+}
