@@ -29,7 +29,9 @@ func NormalizeURL(raw string) (string, bool) {
 		raw = "https://" + raw
 	}
 	u, err := url.Parse(raw)
-	if err != nil || u.Host == "" {
+	// Hostname, not Host: "https://:8080" parses with a port and no hostname, so
+	// checking Host would let it through with the Title ":8080".
+	if err != nil || u.Hostname() == "" {
 		return "", false
 	}
 	u.Fragment = ""

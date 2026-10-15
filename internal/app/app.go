@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -200,11 +201,32 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 // them.
 func (s *Server) handleAlias(w http.ResponseWriter, r *http.Request) {
 	raw := r.PathValue("url")
-	if isKnownRoute(raw) {
+	// A path cannot carry a query, so refusing beats quietly saving a different
+	// URL than the one asked for: /example.com/s?q=1 cannot become
+	// https://example.com/s.
+	if isKnownRoute(raw) || r.URL.RawQuery != "" || !looksLikeHost(raw) {
 		http.NotFound(w, r)
 		return
 	}
 	s.save(w, r, raw, "")
+}
+
+// looksLikeHost reports whether the path a bare-URL request carried names a
+// host. A bare URL always has one, and this wildcard fires on every path the app
+// does not serve, so without the guard a typo like /about would be saved as a
+// Bookmark. "localhost" is allowed without a dot, since a LAN deployment may be
+// reached by that name alone.
+func looksLikeHost(path string) bool {
+	raw := path
+	if !strings.Contains(raw, "://") {
+		raw = "https://" + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	return host == "localhost" || strings.Contains(host, ".")
 }
 
 // isKnownRoute reports whether the path a bare-URL request carried — with no
@@ -216,6 +238,11 @@ func isKnownRoute(path string) bool {
 	full := "/" + path
 	switch full {
 	case "/save", "/rename", "/delete", "/reorder", loginPath, manifestPath, serviceWorkerPath:
+		return true
+	// Not routes the app serves, but paths a browser or a crawler asks for
+	// unprompted. They are not URLs anyone meant to save, and the wildcard would
+	// otherwise swallow them.
+	case "/favicon.ico", "/robots.txt", "/sitemap.xml":
 		return true
 	}
 	return strings.HasPrefix(full, staticPrefix)

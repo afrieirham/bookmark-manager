@@ -225,3 +225,16 @@ func TestReorderOfNothingIsEmpty(t *testing.T) {
 		t.Errorf("got %v, want no Bookmarks", got)
 	}
 }
+
+// TestNormalizeURLRefusesAURLWithNoHost covers the guard's own edge: a port with
+// no hostname parses cleanly, so checking Host is not enough — ":8080" is not a
+// host, and saving it would give a Bookmark the Title ":8080".
+func TestNormalizeURLRefusesAURLWithNoHost(t *testing.T) {
+	for _, raw := range []string{"https://:8080", "https://", "http:///path"} {
+		t.Run(raw, func(t *testing.T) {
+			if got, ok := domain.NormalizeURL(raw); ok {
+				t.Errorf("NormalizeURL(%q) = %q, ok = true; want it refused", raw, got)
+			}
+		})
+	}
+}
