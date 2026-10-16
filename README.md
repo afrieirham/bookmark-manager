@@ -6,10 +6,11 @@ A self-hosted, single-user Start page: one Go binary with SQLite inside.
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8)
 
 Keep a grid of saved URLs and open them from any device. There is no account, no
-sync service and no telemetry: the app talks only to the pages you save. It
-reads each page's `<title>` when saving. On every Start page view, the browser
-requests `/favicon.ico` from each saved host to draw its Bookmark icon, without
-sending a referrer. All CSS is inline, so the page loads nothing from a CDN.
+sync service and no telemetry: when you save a URL, the app reads its `<title>`.
+When a bookmark is added or its URL changes, it requests `/favicon.ico` from that
+host and stores the icon in SQLite. The app serves saved icons itself, so opening
+the Start page does not contact saved hosts. All CSS is inline, so the page loads
+nothing from a CDN.
 
 ## What it does
 
