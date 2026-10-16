@@ -199,10 +199,10 @@ func TestBaseURLHonoursForwardedProto(t *testing.T) {
 	h := newHandler(t, filepath.Join(t.TempDir(), "db.sqlite"), stubFetcher{})
 
 	page := get(t, h, "/", map[string]string{
-		"Host":              "bookmarks.pi",
+		"Host":              "bookmarks.example.com",
 		"X-Forwarded-Proto": "https",
 	}).Body.String()
-	if !strings.Contains(page, "https://bookmarks.pi/save") {
+	if !strings.Contains(page, "https://bookmarks.example.com/save") {
 		t.Errorf("base URL not built from the request:\n%s", page)
 	}
 }

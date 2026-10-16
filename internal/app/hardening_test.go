@@ -18,14 +18,14 @@ func TestForwardedProtoIsIgnoredUnlessItNamesAScheme(t *testing.T) {
 	h := newHandler(t, filepath.Join(t.TempDir(), "db.sqlite"), stubFetcher{})
 
 	page := get(t, h, "/", map[string]string{
-		"Host":              "bookmarks.pi",
+		"Host":              "bookmarks.example.com",
 		"X-Forwarded-Proto": "javascript:alert(1)//",
 	}).Body.String()
 
 	if strings.Contains(page, "javascript:alert(1)") {
 		t.Errorf("the X-Forwarded-Proto value reached the page:\n%s", page)
 	}
-	if !strings.Contains(page, "http://bookmarks.pi/save") {
+	if !strings.Contains(page, "http://bookmarks.example.com/save") {
 		t.Errorf("the base URL did not fall back to the transport scheme:\n%s", page)
 	}
 }
@@ -35,10 +35,10 @@ func TestForwardedProtoAcceptsAProxyChain(t *testing.T) {
 	h := newHandler(t, filepath.Join(t.TempDir(), "db.sqlite"), stubFetcher{})
 
 	page := get(t, h, "/", map[string]string{
-		"Host":              "bookmarks.pi",
+		"Host":              "bookmarks.example.com",
 		"X-Forwarded-Proto": "https, http",
 	}).Body.String()
-	if !strings.Contains(page, "https://bookmarks.pi/save") {
+	if !strings.Contains(page, "https://bookmarks.example.com/save") {
 		t.Errorf("the first hop's scheme was not honoured:\n%s", page)
 	}
 }

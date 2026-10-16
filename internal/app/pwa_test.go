@@ -176,14 +176,14 @@ func TestSharedLinkIsSavedUnderItsTitle(t *testing.T) {
 func TestAppStillWorksOverPlainHTTP(t *testing.T) {
 	h := newHandler(t, filepath.Join(t.TempDir(), "db.sqlite"), stubFetcher{})
 
-	start := get(t, h, "/", map[string]string{"Host": "bookmarks.pi"})
+	start := get(t, h, "/", map[string]string{"Host": "bookmarks.example.com"})
 	if start.Code != http.StatusOK {
 		t.Fatalf("plain-HTTP Start page status = %d, want 200", start.Code)
 	}
 	if !strings.Contains(start.Body.String(), `action="/save"`) {
 		t.Error("plain-HTTP Start page lost its paste box")
 	}
-	if rr := get(t, h, "/manifest.webmanifest", map[string]string{"Host": "bookmarks.pi"}); rr.Code != http.StatusOK {
+	if rr := get(t, h, "/manifest.webmanifest", map[string]string{"Host": "bookmarks.example.com"}); rr.Code != http.StatusOK {
 		t.Errorf("plain-HTTP manifest status = %d, want 200", rr.Code)
 	}
 }

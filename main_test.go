@@ -10,7 +10,7 @@ import (
 
 func TestConfigComesFromTheEnvironment(t *testing.T) {
 	t.Setenv("TOKEN", "s3cret")
-	t.Setenv("BASE_URL", "https://bookmarks.pi")
+	t.Setenv("BASE_URL", "https://bookmarks.example.com")
 	t.Setenv("AUTH_DISABLED", "")
 
 	cfg, err := configFromEnv()
@@ -20,7 +20,7 @@ func TestConfigComesFromTheEnvironment(t *testing.T) {
 	if cfg.Token != "s3cret" {
 		t.Errorf("Token = %q, want the TOKEN environment variable", cfg.Token)
 	}
-	if cfg.BaseURL != "https://bookmarks.pi" {
+	if cfg.BaseURL != "https://bookmarks.example.com" {
 		t.Errorf("BaseURL = %q, want the BASE_URL environment variable", cfg.BaseURL)
 	}
 	if cfg.AuthDisabled {
