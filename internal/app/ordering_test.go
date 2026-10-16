@@ -15,7 +15,7 @@ import (
 func gridOrder(t *testing.T, page string) []string {
 	t.Helper()
 	var ids []string
-	for _, part := range strings.Split(page, `data-id="`)[1:] {
+	for _, part := range strings.Split(page, `<div class="bookmark" data-id="`)[1:] {
 		if end := strings.Index(part, `"`); end >= 0 {
 			ids = append(ids, part[:end])
 		}
