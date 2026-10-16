@@ -7,9 +7,9 @@ A self-hosted, single-user Start page: one Go binary with SQLite inside.
 
 Keep a grid of saved URLs and open them from any device. There is no account, no
 sync service and no telemetry: the app talks only to the pages you save. It
-reads each page's `<title>` when saving and requests `/favicon.ico` to show its
-Bookmark icon, without sending a referrer. All CSS is inline, so the page loads
-nothing from a CDN.
+reads each page's `<title>` when saving. On every Start page view, the browser
+requests `/favicon.ico` from each saved host to draw its Bookmark icon, without
+sending a referrer. All CSS is inline, so the page loads nothing from a CDN.
 
 ## What it does
 

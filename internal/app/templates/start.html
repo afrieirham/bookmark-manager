@@ -175,7 +175,6 @@
   }
 
   document.querySelector(".manage").addEventListener("click", function (event) { event.preventDefault(); showAdd(); });
-  document.getElementById("cancel-shortcut").addEventListener("click", function (event) { event.preventDefault(); dialog.close(); });
   title.addEventListener("input", updateDone);
   url.addEventListener("input", updateDone);
   document.querySelectorAll(".edit-shortcut").forEach(function (button) {
@@ -258,8 +257,7 @@
         if (!response.ok || !result.ok) throw new Error(result.error || "Could not save this shortcut.");
       });
     }).then(function () {
-      dialog.close();
-      location.reload();
+      location.href = "/";
     }).catch(function (error) {
       message.textContent = error.message;
       updateDone();
