@@ -33,6 +33,11 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags="-s -w" -o /out/bookmarks .
 
+# The SQLite directory is made here and handed to the unprivileged user, then
+# copied into the runtime stage with that ownership, so the runtime stage needs
+# no RUN of its own.
+RUN mkdir -p /out/data && chown 65532:65532 /out/data
+
 # ---------------------------------------------------------------------------
 # runtime stage
 # ---------------------------------------------------------------------------
@@ -47,10 +52,10 @@ FROM alpine:3.24
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=build /out/bookmarks /usr/local/bin/bookmarks
 
-# The SQLite file lives on a mounted volume. /data is created and handed to the
-# unprivileged user here so a named volume — which inherits this directory's
-# ownership — works out of the box.
-RUN mkdir -p /data && chown 65532:65532 /data
+# The SQLite file lives on a mounted volume. /data is handed to the unprivileged
+# user so a named volume — which inherits this directory's ownership — works out
+# of the box.
+COPY --from=build --chown=65532:65532 /out/data /data
 VOLUME ["/data"]
 
 # Run unprivileged. The binary only ever reads and writes its own SQLite file,
