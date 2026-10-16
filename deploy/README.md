@@ -144,20 +144,28 @@ in its configuration. The compose service wires it in as a `healthcheck`.
 
 ## Verifying a deployment (human checklist)
 
-Every step below is **unrun**: this was written in an environment with no Docker
-daemon, so nothing here has been through the image. What was exercised was the
-binary on the host — it cross-compiles for `linux/amd64` and `linux/arm64` with
-`CGO_ENABLED=0`, `/healthz` answers `200` without a Token while `/` still
-redirects to `/login`, and the healthcheck command's exit codes were checked
-against a running instance. The steps that go through compose, the proxy or a
-browser are reasoning, not observations. Run them before trusting a deployment.
+Every step below was originally **unrun**: it was written in an environment with
+no Docker daemon. Steps 1–4 have since been executed against a running
+container, and passed — as did the bind-mount backup recipe. That run used
+**podman**, not Docker, again because no Docker daemon was available; podman is
+daemonless and runs this same compose file and image unchanged, so the container
+starts healthy, `/healthz` answers `200` anonymously, `GET /` sends `303` to
+`/login`, the app writes its SQLite file as uid `65532` through the bind mount,
+a named volume needs no `chown`, and a saved Bookmark survives a restart. Podman
+agreeing is strong evidence rather than proof for Docker, and one gap is known:
+`podman-compose` has no `cp` subcommand, so the named-volume backup recipe below
+is still unrun. Steps 5–8 go through nginx, a browser or the published image and
+remain reasoning. Run the unrun ones before trusting a deployment.
 
 1. `docker compose up -d` starts the container, and `docker compose ps` reports
    it as `healthy` within a minute.
 2. `curl -fsS http://localhost:8080/healthz` prints `ok`; the same request
    without any credentials also succeeds.
-3. `curl -I http://localhost:8080/` redirects to `/login` rather than showing
-   the Start page: auth is on.
+3. `curl -sD - -o /dev/null http://localhost:8080/` answers `303 See Other` with
+   `Location: /login` rather than showing the Start page: auth is on. Not
+   `curl -I` — that sends a HEAD, and the auth handler answers any non-GET with
+   `401` rather than a redirect it would not survive, so the wrong flag reads as
+   a broken deployment when auth is in fact working.
 4. Save a Bookmark, then `docker compose restart bookmarks`: the Bookmark is
    still there.
 5. `nginx -t` passes with the server block, and a request through the proxy

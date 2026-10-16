@@ -7,8 +7,19 @@ deploy/
 docs/
 AGENTS.md
 GLOSSARY.md
+# The SQLite file, its sidecars, and any copy of it. `*.sqlite` alone misses
+# `bookmarks.sqlite.bak`, the dated name the backup recipe in deploy/README.md
+# suggests, and the -wal/-shm sidecars — and a -wal holds committed pages not
+# yet in the database file. These must never reach an image layer or a remote
+# builder.
 *.sqlite
 *.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite.*
+
+# The default bind mount from docker-compose.yml, which holds the same file.
+/data/
 
 # CI configuration: the image does not need it, and leaving it in means every
 # workflow edit invalidates the `COPY . .` layer and forces a full rebuild.
