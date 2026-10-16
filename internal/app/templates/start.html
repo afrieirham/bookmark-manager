@@ -33,18 +33,18 @@
   .menu-toggle svg{width:18px;height:18px}
   .bookmark:hover .menu-toggle,.bookmark:focus-within .menu-toggle,.bookmark-menu[open] .menu-toggle{opacity:1}
   .bookmark-actions{position:absolute;top:34px;right:0;width:168px;padding:5px;border:0;border-radius:9px;background:var(--panel);box-shadow:0 5px 18px #0003;text-align:left}
-  .bookmark-actions button{width:100%;min-height:36px;padding:7px 10px;border:0;border-radius:6px;background:transparent;color:inherit;text-align:left;font:inherit;font-size:13px;cursor:pointer}
-  .bookmark-actions button:hover{background:var(--hover)}
+  .bookmark-actions button,.bookmark-actions a{width:100%;min-height:36px;display:flex;align-items:center;padding:7px 10px;border:0;border-radius:6px;background:transparent;color:inherit;text-align:left;text-decoration:none;font:inherit;font-size:13px;cursor:pointer}
+  .bookmark-actions button:hover,.bookmark-actions a:hover{background:var(--hover)}
   .bookmark-actions .remove{color:#767676}
   .bookmark-actions .remove:hover{background:#111;color:#fff}
   @media(prefers-color-scheme:dark){.bookmark-actions .remove:hover{background:#eee;color:#111}}
   .bookmark-actions form{margin:0}
   @media(hover:none){.menu-toggle{opacity:1}}
   .empty{grid-column:1/-1;color:var(--muted);text-align:center}
-  .manage{position:fixed;right:20px;bottom:20px;z-index:2;width:44px;height:44px;display:grid;place-items:center;border:1px solid var(--line);border-radius:50%;background:var(--tile);color:#111;cursor:pointer;box-shadow:0 2px 12px #0002}
+  .manage{position:fixed;right:20px;bottom:20px;z-index:2;width:44px;height:44px;display:grid;place-items:center;border:1px solid var(--line);border-radius:50%;background:var(--tile);color:#111;text-decoration:none;cursor:pointer;box-shadow:0 2px 12px #0002}
   .manage svg{width:18px;height:18px}
   @media(prefers-color-scheme:dark){.manage{color:#f5f5f5}}
-  .manage:focus-visible,.menu-toggle:focus-visible,.bookmark-actions button:focus-visible,.shortcut-dialog button:focus-visible,.shortcut-dialog input:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+  .manage:focus-visible,.menu-toggle:focus-visible,.bookmark-actions button:focus-visible,.bookmark-actions a:focus-visible,.shortcut-dialog button:focus-visible,.shortcut-dialog a:focus-visible,.shortcut-dialog input:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
   .shortcut-dialog{width:min(520px,calc(100vw - 32px));max-width:none;max-height:calc(100svh - 32px);overflow:auto;margin:auto;padding:24px 24px 20px;border:0;border-radius:12px;background:var(--panel);color:var(--ink);box-shadow:0 12px 36px #0004}
   .shortcut-dialog::backdrop{background:var(--backdrop)}
   .shortcut-dialog h1{margin:0 0 18px;font-size:20px;line-height:1.35;font-weight:600}
@@ -58,10 +58,10 @@
   .bookmarklet-help a{display:inline-block;margin-top:8px;color:inherit}
   .bookmarklet-help p{margin:4px 0 0}
   .dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}
-  .dialog-actions button{min-width:92px;min-height:40px;padding:8px 16px;border:1px solid #111;border-radius:9px;background:transparent;color:#111;font:inherit;font-weight:600;cursor:pointer}
+  .dialog-actions button,.dialog-actions a{min-width:92px;min-height:40px;display:inline-flex;align-items:center;justify-content:center;padding:8px 16px;border:1px solid #111;border-radius:9px;background:transparent;color:#111;text-decoration:none;font:inherit;font-weight:600;cursor:pointer}
   .dialog-actions .done{background:#111;color:#fff}
   .dialog-actions .done:disabled{opacity:.45;cursor:default}
-  @media(prefers-color-scheme:dark){.dialog-actions button{border-color:#eee;color:#eee}.dialog-actions .done{background:#eee;color:#111}}
+  @media(prefers-color-scheme:dark){.dialog-actions button,.dialog-actions a{border-color:#eee;color:#eee}.dialog-actions .done{background:#eee;color:#111}}
   @media(max-width:520px){
     main{padding:32px 16px 84px}
     .grid{grid-template-columns:repeat(auto-fit,minmax(90px,120px));gap:24px 4px}
@@ -77,7 +77,7 @@
 {{range .Bookmarks}}
   <div class="bookmark" data-id="{{.ID}}" draggable="true">
     <a class="bookmark-link" href="{{.URL}}" target="_blank" rel="noopener" draggable="false">
-      <span class="icon" aria-hidden="true"><span class="icon-fallback">{{initial .Title}}</span>{{with faviconURL .URL}}<img class="icon-favicon" src="{{.}}" alt="" draggable="false">{{end}}</span>
+      <span class="icon" aria-hidden="true"><span class="icon-fallback">{{initial .Title}}</span>{{with faviconURL .URL}}<img class="icon-favicon" src="{{.}}" alt="" referrerpolicy="no-referrer" draggable="false">{{end}}</span>
       <span class="label">{{.Title}}</span>
     </a>
     <details class="bookmark-menu">
@@ -85,7 +85,7 @@
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>
       </summary>
       <div class="bookmark-actions">
-        <button type="button" class="edit-shortcut" data-id="{{.ID}}" data-title="{{.Title}}" data-url="{{.URL}}">Edit shortcut</button>
+      <a class="edit-shortcut" href="/?saved={{.ID}}" data-id="{{.ID}}" data-title="{{.Title}}" data-url="{{.URL}}">Edit shortcut</a>
         <form method="post" action="/delete">
           <input type="hidden" name="id" value="{{.ID}}">
           <button type="submit" class="remove">Remove</button>
@@ -99,11 +99,11 @@
 </div>
 </main>
 
-<button type="button" class="manage" aria-label="Add shortcut" title="Add shortcut">
+<a class="manage" href="/?add=1" aria-label="Add shortcut" title="Add shortcut">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14 5 5 5M4 20l4.2-.8L19 8.4 15.6 5 4.8 15.8 4 20Z"/></svg>
-</button>
+</a>
 
-<dialog class="shortcut-dialog" id="shortcut-dialog" aria-labelledby="dialog-title"{{if or .Pending .Error}} open{{end}}>
+<dialog class="shortcut-dialog" id="shortcut-dialog" aria-labelledby="dialog-title"{{if or .Pending .Error .Add}} open{{end}}>
   <form id="shortcut-form" method="{{if .Pending}}post{{else}}get{{end}}" action="{{if .Pending}}/rename{{else}}/save{{end}}">
     <input type="hidden" id="shortcut-id" name="id" value="{{if .Pending}}{{.Pending.ID}}{{end}}">
     <h1 id="dialog-title">{{if .Pending}}Edit shortcut{{else}}Add shortcut{{end}}</h1>
@@ -120,7 +120,7 @@
     </details>
     <p class="dialog-error" id="dialog-error" aria-live="polite">{{.Error}}</p>
     <div class="dialog-actions">
-      <button type="button" id="cancel-shortcut">Cancel</button>
+      <a href="/" id="cancel-shortcut">Cancel</a>
       <button type="submit" class="done" id="done-shortcut">Done</button>
     </div>
   </form>
@@ -174,12 +174,12 @@
     title.focus();
   }
 
-  document.querySelector(".manage").addEventListener("click", showAdd);
-  document.getElementById("cancel-shortcut").addEventListener("click", function () { dialog.close(); });
+  document.querySelector(".manage").addEventListener("click", function (event) { event.preventDefault(); showAdd(); });
+  document.getElementById("cancel-shortcut").addEventListener("click", function (event) { event.preventDefault(); dialog.close(); });
   title.addEventListener("input", updateDone);
   url.addEventListener("input", updateDone);
   document.querySelectorAll(".edit-shortcut").forEach(function (button) {
-    button.addEventListener("click", function () { showEdit(button); });
+    button.addEventListener("click", function (event) { event.preventDefault(); showEdit(button); });
   });
   document.addEventListener("click", function (event) {
     if (event.target.closest(".bookmark-menu")) {

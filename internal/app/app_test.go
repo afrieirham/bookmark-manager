@@ -176,8 +176,8 @@ func TestSaveDuplicateDoesNotCreateASecond(t *testing.T) {
 		t.Fatal("duplicate did not re-select the first Bookmark")
 	}
 	page := get(t, h, "/", nil).Body.String()
-	if n := strings.Count(page, `class="card`); n != 1 {
-		t.Errorf("grid has %d cards, want 1 after a duplicate save", n)
+	if n := strings.Count(page, `class="bookmark"`); n != 1 {
+		t.Errorf("grid has %d Bookmarks, want 1 after a duplicate save", n)
 	}
 }
 
@@ -299,7 +299,7 @@ func TestSaveFallsBackToTheHostWhenTheFetchFails(t *testing.T) {
 	rr := get(t, h, "/save?u="+url.QueryEscape("https://www.example.com/deep/page"), nil)
 	page := get(t, h, rr.Header().Get("Location"), nil).Body.String()
 	// Assert the Title itself, not the URL shown beneath it.
-	if !strings.Contains(page, ">example.com</a>") {
+	if !strings.Contains(page, `class="label">example.com</span>`) {
 		t.Errorf("Title did not fall back to the host:\n%s", page)
 	}
 }

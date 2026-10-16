@@ -202,6 +202,7 @@ type startData struct {
 	Bookmarks   []domain.Bookmark
 	Pending     *domain.Bookmark
 	Duplicate   bool
+	Add         bool
 	Error       string
 	BaseURL     string
 	Bookmarklet template.URL
@@ -218,10 +219,17 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 		Bookmarks:   bookmarks,
 		BaseURL:     base,
 		Bookmarklet: bookmarklet(base),
+		Add:         r.URL.Query().Get("add") == "1",
 	}
 	if idStr := r.URL.Query().Get("saved"); idStr != "" {
 		if id, err := strconv.ParseInt(idStr, 10, 64); err == nil {
 			if b, ok, err := s.store.Get(r.Context(), id); err == nil && ok {
+				if title, exists := r.URL.Query()["title"]; exists {
+					b.Title = title[0]
+				}
+				if rawURL, exists := r.URL.Query()["u"]; exists {
+					b.URL = rawURL[0]
+				}
 				data.Pending = &b
 				data.Duplicate = r.URL.Query().Get("dup") == "1"
 			}
@@ -403,12 +411,13 @@ func (s *Server) handleRename(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-	renamed, applied := domain.Rename(b, r.PostFormValue("title"))
+	title := r.PostFormValue("title")
+	rawURL := r.PostFormValue("u")
+	renamed, applied := domain.Rename(b, title)
 	if !applied {
-		s.respondUpdateError(w, r, http.StatusBadRequest, "Enter a name and URL.", "invalid")
+		s.respondUpdateError(w, r, id, title, rawURL, http.StatusBadRequest, "Enter a name and URL.", "invalid")
 		return
 	}
-	rawURL := r.PostFormValue("u")
 	if rawURL == "" {
 		if err := s.store.Rename(r.Context(), id, renamed.Title); err != nil {
 			s.fail(w, err)
@@ -417,7 +426,7 @@ func (s *Server) handleRename(w http.ResponseWriter, r *http.Request) {
 	} else {
 		normalizedURL, valid := domain.NormalizeURL(rawURL)
 		if !valid {
-			s.respondUpdateError(w, r, http.StatusBadRequest, "Enter a valid URL.", "invalid")
+			s.respondUpdateError(w, r, id, title, rawURL, http.StatusBadRequest, "Enter a valid URL.", "invalid")
 			return
 		}
 		bookmarks, err := s.store.List(r.Context())
@@ -427,7 +436,7 @@ func (s *Server) handleRename(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, other := range bookmarks {
 			if other.ID != id && other.URL == normalizedURL {
-				s.respondUpdateError(w, r, http.StatusConflict, "That URL is already in your bookmarks.", "duplicate")
+				s.respondUpdateError(w, r, id, title, rawURL, http.StatusConflict, "That URL is already in your bookmarks.", "duplicate")
 				return
 			}
 		}
@@ -443,12 +452,18 @@ func (s *Server) handleRename(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-func (s *Server) respondUpdateError(w http.ResponseWriter, r *http.Request, status int, message, code string) {
+func (s *Server) respondUpdateError(w http.ResponseWriter, r *http.Request, id int64, title, rawURL string, status int, message, code string) {
 	if wantsJSON(r) {
 		writeJSON(w, saveResult{OK: false, Error: message}, status)
 		return
 	}
-	http.Redirect(w, r, "/?error="+code, http.StatusSeeOther)
+	query := url.Values{
+		"saved": {strconv.FormatInt(id, 10)},
+		"error": {code},
+		"title": {title},
+		"u":     {rawURL},
+	}
+	http.Redirect(w, r, "/?"+query.Encode(), http.StatusSeeOther)
 }
 
 // handleDelete removes a Bookmark. Like handleRename it backs the plain form

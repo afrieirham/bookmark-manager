@@ -6,14 +6,15 @@ A self-hosted, single-user Start page: one Go binary with SQLite inside.
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8)
 
 Keep a grid of saved URLs and open them from any device. There is no account, no
-sync service and no telemetry: the app talks to nothing but the pages you save,
-and only to read their `<title>`. All of its CSS is inline, so the page loads
-nothing from a CDN either.
+sync service and no telemetry: the app talks only to the pages you save. It
+reads each page's `<title>` when saving and requests `/favicon.ico` to show its
+Bookmark icon, without sending a referrer. All CSS is inline, so the page loads
+nothing from a CDN.
 
 ## What it does
 
 - **A Start page.** Your saved URLs as a grid, at the app root.
-- **Several ways to save.** A paste box on the page, a bare-URL alias
+- **Several ways to save.** The add dialog's URL field, a bare-URL alias
   (`/example.com/deep/page` saves that URL), a draggable bookmarklet, and an
   Android share target, so a link reaches the app straight from the share sheet.
 - **Titles for free.** On save the app fetches the page's `<title>`, falling
