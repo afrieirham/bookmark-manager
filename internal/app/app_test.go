@@ -87,7 +87,7 @@ func request(t *testing.T, method, target string, header map[string]string, body
 	return req
 }
 
-func TestStartPageShowsPasteBox(t *testing.T) {
+func TestStartPageShowsAddShortcutDialog(t *testing.T) {
 	h := newHandler(t, filepath.Join(t.TempDir(), "db.sqlite"), stubFetcher{})
 
 	rr := get(t, h, "/", nil)
@@ -95,8 +95,8 @@ func TestStartPageShowsPasteBox(t *testing.T) {
 		t.Fatalf("status = %d, want 200", rr.Code)
 	}
 	body := rr.Body.String()
-	if !strings.Contains(body, `action="/save"`) || !strings.Contains(body, `name="u"`) {
-		t.Errorf("Start page has no paste box posting to /save:\n%s", body)
+	if !strings.Contains(body, `action="/save"`) || !strings.Contains(body, `name="u"`) || !strings.Contains(body, `id="shortcut-dialog"`) {
+		t.Errorf("Start page has no Add shortcut dialog posting to /save:\n%s", body)
 	}
 	if !strings.Contains(body, "No bookmarks yet") {
 		t.Errorf("empty Start page does not say it is empty:\n%s", body)
@@ -115,11 +115,11 @@ func TestSaveRedirectsToStartPageWithSavedID(t *testing.T) {
 	}
 
 	page := get(t, h, rr.Header().Get("Location"), nil).Body.String()
-	if !strings.Contains(page, "Saved — rename it?") {
-		t.Errorf("Start page does not prompt to rename:\n%s", page)
+	if !strings.Contains(page, "Edit shortcut") || !strings.Contains(page, `id="shortcut-dialog" aria-labelledby="dialog-title" open`) {
+		t.Errorf("saved Bookmark does not open the edit dialog:\n%s", page)
 	}
-	if !strings.Contains(page, `class="card hot" data-id="1"`) {
-		t.Errorf("new Bookmark is not highlighted:\n%s", page)
+	if !strings.Contains(page, `class="bookmark" data-id="1"`) {
+		t.Errorf("new Bookmark is not shown in the grid:\n%s", page)
 	}
 	if !strings.Contains(page, "example.com") {
 		t.Errorf("new Bookmark is not shown:\n%s", page)
@@ -216,16 +216,16 @@ func post(t *testing.T, h http.Handler, target string, form url.Values) *httptes
 	return serve(t, h, req)
 }
 
-func TestStartPageOffersRenameFormForEachBookmark(t *testing.T) {
+func TestStartPageOffersEditAndRemoveActionsForEachBookmark(t *testing.T) {
 	h := newHandler(t, filepath.Join(t.TempDir(), "db.sqlite"), stubFetcher{})
 	get(t, h, "/save?u="+url.QueryEscape("https://example.com")+"&title="+url.QueryEscape("A Title"), nil)
 
 	page := get(t, h, "/", nil).Body.String()
-	if !strings.Contains(page, `action="/rename"`) {
-		t.Errorf("Start page has no rename form (JS-off rename impossible):\n%s", page)
+	if !strings.Contains(page, `class="edit-shortcut"`) {
+		t.Errorf("Start page has no Edit shortcut action:\n%s", page)
 	}
-	if !strings.Contains(page, `name="title"`) {
-		t.Errorf("rename form has no Title field:\n%s", page)
+	if !strings.Contains(page, `name="title"`) || !strings.Contains(page, `name="u"`) {
+		t.Errorf("shortcut dialog has no Name and URL fields:\n%s", page)
 	}
 	if !strings.Contains(page, `action="/delete"`) {
 		t.Errorf("Start page has no delete form:\n%s", page)
