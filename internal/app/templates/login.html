@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bookmarks — enter Token</title>
+<style>
+  :root{--bg:#f7f7f5;--ink:#1a1a18;--muted:#6b6b66;--line:#e6e5e1;--accent:#4f46e5}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  main{max-width:420px;margin:0 auto;padding:72px 20px}
+  h1{font-size:22px;margin:0 0 6px}
+  .hint{color:var(--muted);font-size:14px;margin:0 0 4px}
+  .error{color:#b91c1c;font-size:14px}
+  form{display:flex;gap:8px;margin-top:16px}
+  input{flex:1;min-width:0;font:inherit;font-size:15px;padding:8px 12px;border:1px solid var(--line);border-radius:9px;background:#fff}
+  button{font:inherit;font-size:14px;padding:8px 14px;border-radius:9px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}
+</style>
+</head>
+<body>
+<main>
+<h1>Bookmarks</h1>
+<p class="hint">Enter your Token to continue. This device will remember it.</p>
+{{if .Error}}<p class="error">That Token was not right.</p>{{end}}
+<form method="post" action="/login">
+  <input name="token" type="password" placeholder="Token" aria-label="Token" autocomplete="current-password" autofocus>
+  <button>Enter</button>
+</form>
+</main>
+</body>
+</html>
