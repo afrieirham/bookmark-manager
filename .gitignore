@@ -6,6 +6,13 @@
 *.sqlite-wal
 *.sqlite-shm
 
+# Copies of it. The backup recipe in deploy/README.md writes
+# ./bookmarks.sqlite.bak beside the compose file, and a dated name is just as
+# likely; either holds the same Bookmarks as the original. Matches any suffix
+# after ".sqlite", but not the "-journal"/"-wal"/"-shm" sidecars above, which
+# use a hyphen.
+*.sqlite.*
+
 # The operator's secret. .env.example is the committed template.
 .env
 
