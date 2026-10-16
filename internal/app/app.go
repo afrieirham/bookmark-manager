@@ -37,6 +37,12 @@ type Fetcher interface {
 	Title(ctx context.Context, url string) (string, bool)
 }
 
+// FaviconFetcher optionally reads a site's conventional favicon when a
+// Bookmark is added or its URL changes.
+type FaviconFetcher interface {
+	Favicon(ctx context.Context, url string) ([]byte, string, bool)
+}
+
 // FetcherFunc adapts a function to the Fetcher interface.
 type FetcherFunc func(ctx context.Context, url string) (string, bool)
 
@@ -47,8 +53,10 @@ func (f FetcherFunc) Title(ctx context.Context, url string) (string, bool) { ret
 type Store interface {
 	List(ctx context.Context) ([]domain.Bookmark, error)
 	Get(ctx context.Context, id int64) (domain.Bookmark, bool, error)
+	Favicon(ctx context.Context, id int64) ([]byte, string, bool, error)
 	Insert(ctx context.Context, b domain.Bookmark) (domain.Bookmark, error)
 	Rename(ctx context.Context, id int64, title string) error
+	Update(ctx context.Context, id int64, title, url string, favicon []byte, faviconType string) error
 	Delete(ctx context.Context, id int64) error
 	Reorder(ctx context.Context, ids []int64) error
 }
@@ -87,10 +95,17 @@ func New(store Store, fetcher Fetcher, cfg Config) *Server {
 		store:   store,
 		fetcher: fetcher,
 		cfg:     cfg,
-		tmpl:    template.Must(template.ParseFS(templatesFS, "templates/*.html")),
+		tmpl:    template.Must(template.New("start.html").Funcs(template.FuncMap{"initial": bookmarkInitial}).ParseFS(templatesFS, "templates/*.html")),
 		static:  http.StripPrefix(staticPrefix, http.FileServer(http.FS(staticDir))),
 		now:     time.Now,
 	}
+}
+
+func bookmarkInitial(title string) string {
+	for _, r := range strings.TrimSpace(title) {
+		return strings.ToUpper(string(r))
+	}
+	return "?"
 }
 
 // Handler returns the HTTP routes. The fixed-path routes are registered first,
@@ -101,6 +116,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET "+healthPath, s.handleHealth)
 	mux.HandleFunc("GET "+manifestPath, s.handleManifest)
 	mux.HandleFunc("GET "+serviceWorkerPath, s.handleServiceWorker)
+	mux.HandleFunc("GET /favicon/{id}", s.handleFavicon)
 	mux.Handle("GET "+staticPrefix, s.static)
 	// The exact root is its own pattern so the bare-URL catch-all below does not
 	// swallow it: GET /{$} matches only "/", and a more specific pattern wins
@@ -118,6 +134,35 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST "+loginPath, s.handleLogin)
 	mux.HandleFunc("GET /{url...}", s.handleAlias)
 	return s.authenticate(mux)
+}
+
+func (s *Server) handleFavicon(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id < 1 {
+		http.NotFound(w, r)
+		return
+	}
+	data, mediaType, ok, err := s.store.Favicon(r.Context(), id)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", mediaType)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	w.Header().Set("Cache-Control", "private, no-cache")
+	sum := sha256.Sum256(data)
+	etag := `"` + hex.EncodeToString(sum[:]) + `"`
+	w.Header().Set("ETag", etag)
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	_, _ = w.Write(data)
 }
 
 // Routes served from a fixed path: the health probe and the PWA files. The
@@ -179,6 +224,7 @@ type startData struct {
 	Bookmarks   []domain.Bookmark
 	Pending     *domain.Bookmark
 	Duplicate   bool
+	Add         bool
 	Error       string
 	BaseURL     string
 	Bookmarklet template.URL
@@ -195,17 +241,27 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 		Bookmarks:   bookmarks,
 		BaseURL:     base,
 		Bookmarklet: bookmarklet(base),
+		Add:         r.URL.Query().Get("add") == "1",
 	}
 	if idStr := r.URL.Query().Get("saved"); idStr != "" {
 		if id, err := strconv.ParseInt(idStr, 10, 64); err == nil {
 			if b, ok, err := s.store.Get(r.Context(), id); err == nil && ok {
+				if title, exists := r.URL.Query()["title"]; exists {
+					b.Title = title[0]
+				}
+				if rawURL, exists := r.URL.Query()["u"]; exists {
+					b.URL = rawURL[0]
+				}
 				data.Pending = &b
 				data.Duplicate = r.URL.Query().Get("dup") == "1"
 			}
 		}
 	}
-	if r.URL.Query().Get("error") != "" {
-		data.Error = "That does not look like a URL."
+	switch r.URL.Query().Get("error") {
+	case "invalid":
+		data.Error = "Enter a valid name and URL."
+	case "duplicate":
+		data.Error = "That URL is already in your bookmarks."
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -271,7 +327,7 @@ func isKnownRoute(path string) bool {
 	case "/favicon.ico", "/robots.txt", "/sitemap.xml":
 		return true
 	}
-	return strings.HasPrefix(full, staticPrefix)
+	return strings.HasPrefix(full, staticPrefix) || strings.HasPrefix(full, "/favicon/")
 }
 
 // save stores raw as a Bookmark, the work /save and the /<url> alias share. An
@@ -302,6 +358,9 @@ func (s *Server) save(w http.ResponseWriter, r *http.Request, raw, given string)
 		s.respondSaved(w, r, res.Bookmark.ID, true)
 		return
 	}
+	if iconFetcher, ok := s.fetcher.(FaviconFetcher); ok {
+		res.Bookmark.Favicon, res.Bookmark.FaviconType, _ = iconFetcher.Favicon(r.Context(), nu)
+	}
 
 	saved, err := s.store.Insert(r.Context(), res.Bookmark)
 	if err != nil {
@@ -314,12 +373,11 @@ func (s *Server) save(w http.ResponseWriter, r *http.Request, raw, given string)
 // respondSaved reports a completed save. A browser goes back to the Start page
 // showing the pending-rename prompt, flagged when the URL was already saved; a
 // client asking for JSON gets the Bookmark's id instead, since it has no page to
-// return to and needs the id to act on. Saving a URL that is already saved
-// succeeds with the existing id, so a script may save the same URL twice without
-// having to tell the two apart.
+// return to and needs the id to act on. A duplicate still returns the existing
+// id and marks the result so a script can keep its form open with feedback.
 func (s *Server) respondSaved(w http.ResponseWriter, r *http.Request, id int64, duplicate bool) {
 	if wantsJSON(r) {
-		writeJSON(w, saveResult{OK: true, ID: id}, http.StatusOK)
+		writeJSON(w, saveResult{OK: true, ID: id, Duplicate: duplicate}, http.StatusOK)
 		return
 	}
 	http.Redirect(w, r, savedLocation(id, duplicate), http.StatusSeeOther)
@@ -338,9 +396,10 @@ func (s *Server) respondSaveError(w http.ResponseWriter, r *http.Request) {
 // saveResult is the machine-readable outcome of a save: {"ok":true,"id":n} when
 // it worked, and an explanation instead when the URL was unusable.
 type saveResult struct {
-	OK    bool   `json:"ok"`
-	ID    int64  `json:"id,omitempty"`
-	Error string `json:"error,omitempty"`
+	OK        bool   `json:"ok"`
+	ID        int64  `json:"id,omitempty"`
+	Duplicate bool   `json:"duplicate,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 func writeJSON(w http.ResponseWriter, v any, status int) {
@@ -359,9 +418,9 @@ func savedLocation(id int64, duplicate bool) string {
 	return loc
 }
 
-// handleRename applies a new Title to a Bookmark. It is the plain form target
-// the Start page posts to, so it works with JS off; an inline fetch uses the
-// same endpoint. A blank Title is ignored (the Bookmark is left alone).
+// handleRename updates a Bookmark's title and URL. The plain form redirect is
+// the no-JavaScript fallback; the dialog uses the JSON response to stay open
+// when it needs to show a validation error.
 func (s *Server) handleRename(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PostFormValue("id"), 10, 64)
 	if err != nil {
@@ -377,13 +436,71 @@ func (s *Server) handleRename(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-	if renamed, applied := domain.Rename(b, r.PostFormValue("title")); applied {
+	title := r.PostFormValue("title")
+	rawURL := r.PostFormValue("u")
+	renamed, applied := domain.Rename(b, title)
+	if !applied {
+		s.respondUpdateError(w, r, id, title, rawURL, http.StatusBadRequest, "Enter a name and URL.", "invalid")
+		return
+	}
+	if rawURL == "" {
 		if err := s.store.Rename(r.Context(), id, renamed.Title); err != nil {
 			s.fail(w, err)
 			return
 		}
+	} else {
+		normalizedURL, valid := domain.NormalizeURL(rawURL)
+		if !valid {
+			s.respondUpdateError(w, r, id, title, rawURL, http.StatusBadRequest, "Enter a valid URL.", "invalid")
+			return
+		}
+		bookmarks, err := s.store.List(r.Context())
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		for _, other := range bookmarks {
+			if other.ID != id && other.URL == normalizedURL {
+				s.respondUpdateError(w, r, id, title, rawURL, http.StatusConflict, "That URL is already in your bookmarks.", "duplicate")
+				return
+			}
+		}
+		if normalizedURL == b.URL {
+			if err := s.store.Rename(r.Context(), id, renamed.Title); err != nil {
+				s.fail(w, err)
+				return
+			}
+		} else {
+			var favicon []byte
+			var faviconType string
+			if iconFetcher, ok := s.fetcher.(FaviconFetcher); ok {
+				favicon, faviconType, _ = iconFetcher.Favicon(r.Context(), normalizedURL)
+			}
+			if err := s.store.Update(r.Context(), id, renamed.Title, normalizedURL, favicon, faviconType); err != nil {
+				s.fail(w, err)
+				return
+			}
+		}
+	}
+	if wantsJSON(r) {
+		writeJSON(w, saveResult{OK: true, ID: id}, http.StatusOK)
+		return
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) respondUpdateError(w http.ResponseWriter, r *http.Request, id int64, title, rawURL string, status int, message, code string) {
+	if wantsJSON(r) {
+		writeJSON(w, saveResult{OK: false, Error: message}, status)
+		return
+	}
+	query := url.Values{
+		"saved": {strconv.FormatInt(id, 10)},
+		"error": {code},
+		"title": {title},
+		"u":     {rawURL},
+	}
+	http.Redirect(w, r, "/?"+query.Encode(), http.StatusSeeOther)
 }
 
 // handleDelete removes a Bookmark. Like handleRename it backs the plain form

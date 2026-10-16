@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -17,6 +18,8 @@ import (
 
 // maxBody caps how much of a page is read while hunting for the <title>.
 const maxBody = 1 << 20
+
+const maxFaviconBody = 256 << 10
 
 // HTTP fetches a page's Title over http/https with a short timeout. It is
 // best-effort: any failure reports ok=false and the caller falls back.
@@ -118,6 +121,47 @@ func (f *HTTP) Title(ctx context.Context, rawURL string) (string, bool) {
 		return title, true
 	}
 	return "", false
+}
+
+// Favicon fetches the conventional /favicon.ico image for a saved URL. It is
+// best-effort, bounded in size, and accepts image media types only.
+func (f *HTTP) Favicon(ctx context.Context, rawURL string) ([]byte, string, bool) {
+	u, err := url.Parse(rawURL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil {
+		return nil, "", false
+	}
+	target := (&url.URL{Scheme: u.Scheme, Host: u.Host, Path: "/favicon.ico"}).String()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		return nil, "", false
+	}
+	req.Header.Set("User-Agent", "bookmark-manager/0.1")
+	resp, err := f.client.Do(req)
+	if err != nil {
+		return nil, "", false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, "", false
+	}
+	mediaType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	if err != nil || !supportedFaviconType(strings.ToLower(mediaType)) {
+		return nil, "", false
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxFaviconBody+1))
+	if err != nil || len(data) == 0 || len(data) > maxFaviconBody {
+		return nil, "", false
+	}
+	return data, mediaType, true
+}
+
+func supportedFaviconType(mediaType string) bool {
+	switch mediaType {
+	case "image/gif", "image/jpeg", "image/png", "image/svg+xml", "image/vnd.microsoft.icon", "image/webp", "image/x-icon":
+		return true
+	default:
+		return false
+	}
 }
 
 func firstTitle(n *html.Node) string {

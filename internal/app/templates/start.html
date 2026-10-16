@@ -5,166 +5,280 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bookmarks</title>
 <link rel="manifest" href="/manifest.webmanifest">
-<meta name="theme-color" content="#4f46e5">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000">
 <link rel="icon" href="/static/icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <style>
-  :root{--bg:#f7f7f5;--ink:#1a1a18;--muted:#6b6b66;--line:#e6e5e1;--accent:#4f46e5;--soft:#eef0ff}
+  :root{color-scheme:light dark;--bg:#fff;--ink:#111;--muted:#767676;--line:#dedede;--tile:#f2f2f2;--panel:#fff;--hover:#f5f5f5;--backdrop:#0009}
+  @media(prefers-color-scheme:dark){:root{--bg:#000;--ink:#f5f5f5;--muted:#767676;--line:#333;--tile:#191919;--panel:#000;--hover:#111;--backdrop:#000b}}
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-  main{max-width:860px;margin:0 auto;padding:40px 20px 80px}
-  h1{font-size:24px;margin:0 0 4px}
-  .hint{color:var(--muted);font-size:14px}
-  .error{color:#b91c1c;font-size:14px}
-  .tools{display:flex;gap:12px;align-items:center;margin:16px 0}
-  .bmk{display:inline-block;text-decoration:none;font-weight:600;font-size:14px;padding:8px 14px;border-radius:9px;background:var(--soft);border:1px dashed #b9bdf5;color:var(--accent)}
-  .paste{display:flex;gap:8px;margin:8px 0 24px}
-  .paste input{flex:1;font:inherit;font-size:15px;padding:8px 12px;border:1px solid var(--line);border-radius:9px;background:#fff}
-  button{font:inherit;font-size:14px;padding:8px 14px;border-radius:9px;border:1px solid var(--line);background:#fff;cursor:pointer}
-  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-  .pending{background:var(--soft);border:1px solid #c7cbff;border-radius:12px;padding:14px;margin-bottom:18px;font-weight:600}
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
-  .card{border:1px solid var(--line);border-radius:10px;padding:12px 13px;background:#fff;cursor:grab}
-  .card.hot{border-color:var(--accent);box-shadow:0 0 0 3px var(--soft)}
-  .card.dragging{opacity:.4;cursor:grabbing}
-  .card .t{font-weight:600;color:inherit;text-decoration:none;display:block;margin-bottom:3px}
-  .card .t:hover{text-decoration:underline}
-  .card .u{color:var(--muted);font-family:ui-monospace,Menlo,monospace;font-size:12px;word-break:break-all}
-  .card form{margin:0}
-  .card .rename{display:flex;gap:6px;margin-top:8px}
-  .card .rename input{flex:1;min-width:0;font:inherit;font-size:13px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;background:#fff}
-  .card .delete{margin-top:6px}
-  .card .delete button{font-size:12px;padding:4px 10px;color:#b91c1c}
-  .empty{color:var(--muted);font-style:italic}
+  body{margin:0;background:var(--bg);color:#111;font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;min-height:100vh;min-height:100svh}
+  @media(prefers-color-scheme:dark){body{color:#f5f5f5}}
+  main{min-height:100vh;min-height:100svh;display:grid;place-items:center;padding:48px 24px}
+  .grid{width:min(100%,1120px);display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,128px));justify-content:center;justify-items:center;gap:28px 8px;align-items:start}
+  .bookmark{position:relative;width:100%;min-width:0;padding:8px 4px 12px;text-align:center;border-radius:14px;cursor:grab}
+  .bookmark.dragging{opacity:.4;cursor:grabbing}
+  .bookmark:hover,.bookmark:focus-within{background:var(--hover)}
+  .bookmark-link{display:flex;flex-direction:column;align-items:center;gap:10px;color:inherit;text-decoration:none;outline-offset:5px;border-radius:10px}
+  .icon{position:relative;width:56px;height:56px;border-radius:12px;background:var(--tile);color:#111;display:grid;place-items:center;font-size:22px;font-weight:600;line-height:1}
+  .icon-favicon{display:none;position:absolute;inset:0;width:32px;height:32px;margin:auto;object-fit:contain}
+  .icon.has-favicon .icon-favicon{display:block}
+  .icon.has-favicon .icon-fallback{visibility:hidden}
+  @media(prefers-color-scheme:dark){.icon{color:#f5f5f5}}
+  .label{width:100%;max-width:128px;min-height:2.6em;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-height:1.3;font-size:14px;font-weight:500}
+  .bookmark-menu{position:absolute;top:4px;right:4px;z-index:1}
+  .menu-toggle{width:30px;height:30px;display:grid;place-items:center;list-style:none;border-radius:8px;color:var(--muted);cursor:pointer;opacity:0}
+  .menu-toggle::-webkit-details-marker{display:none}
+  .menu-toggle svg{width:18px;height:18px}
+  .bookmark:hover .menu-toggle,.bookmark:focus-within .menu-toggle,.bookmark-menu[open] .menu-toggle{opacity:1}
+  .bookmark-actions{position:absolute;top:34px;right:0;width:168px;padding:5px;border:0;border-radius:9px;background:var(--panel);box-shadow:0 5px 18px #0003;text-align:left}
+  .bookmark-actions button,.bookmark-actions a{width:100%;min-height:36px;display:flex;align-items:center;padding:7px 10px;border:0;border-radius:6px;background:transparent;color:inherit;text-align:left;text-decoration:none;font:inherit;font-size:13px;cursor:pointer}
+  .bookmark-actions button:hover,.bookmark-actions a:hover{background:var(--hover)}
+  .bookmark-actions .remove{color:#767676}
+  .bookmark-actions .remove:hover{background:#111;color:#fff}
+  @media(prefers-color-scheme:dark){.bookmark-actions .remove:hover{background:#eee;color:#111}}
+  .bookmark-actions form{margin:0}
+  @media(hover:none){.menu-toggle{opacity:1}}
+  .empty{grid-column:1/-1;color:var(--muted);text-align:center}
+  .manage{position:fixed;right:20px;bottom:20px;z-index:2;width:44px;height:44px;display:grid;place-items:center;border:1px solid var(--line);border-radius:50%;background:var(--tile);color:#111;text-decoration:none;cursor:pointer;box-shadow:0 2px 12px #0002}
+  .manage svg{width:18px;height:18px}
+  @media(prefers-color-scheme:dark){.manage{color:#f5f5f5}}
+  .manage:focus-visible,.menu-toggle:focus-visible,.bookmark-actions button:focus-visible,.bookmark-actions a:focus-visible,.shortcut-dialog button:focus-visible,.shortcut-dialog a:focus-visible,.shortcut-dialog input:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+  .shortcut-dialog{width:min(520px,calc(100vw - 32px));max-width:none;max-height:calc(100svh - 32px);overflow:auto;margin:auto;padding:24px 24px 20px;border:0;border-radius:12px;background:var(--panel);color:var(--ink);box-shadow:0 12px 36px #0004}
+  .shortcut-dialog::backdrop{background:var(--backdrop)}
+  .shortcut-dialog h1{margin:0 0 18px;font-size:20px;line-height:1.35;font-weight:600}
+  .shortcut-dialog label{display:block;margin-top:16px;font-size:14px;font-weight:600}
+  .shortcut-dialog input{display:block;width:100%;height:50px;margin-top:8px;padding:0 12px;border:0;border-bottom:1px solid #777;border-radius:9px 9px 0 0;background:#eee;color:#111;font:inherit;font-size:16px}
+  @media(prefers-color-scheme:dark){.shortcut-dialog input{border-color:#888;background:#1c1c1c;color:#f5f5f5}}
+  .shortcut-dialog input:focus{border-bottom:2px solid var(--ink);outline-offset:2px}
+  .dialog-error{min-height:1.5em;margin:10px 0 0;color:#767676;font-size:13px}
+  .bookmarklet-help{margin-top:18px;color:#767676;font-size:13px}
+  .bookmarklet-help summary{cursor:pointer}
+  .bookmarklet-help a{display:inline-block;margin-top:8px;color:inherit}
+  .bookmarklet-help p{margin:4px 0 0}
+  .dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}
+  .dialog-actions button,.dialog-actions a{min-width:92px;min-height:40px;display:inline-flex;align-items:center;justify-content:center;padding:8px 16px;border:1px solid #111;border-radius:9px;background:transparent;color:#111;text-decoration:none;font:inherit;font-weight:600;cursor:pointer}
+  .dialog-actions .done{background:#111;color:#fff}
+  .dialog-actions .done:disabled{opacity:.45;cursor:default}
+  @media(prefers-color-scheme:dark){.dialog-actions button,.dialog-actions a{border-color:#eee;color:#eee}.dialog-actions .done{background:#eee;color:#111}}
+  @media(max-width:520px){
+    main{padding:32px 16px 84px}
+    .grid{grid-template-columns:repeat(auto-fit,minmax(90px,120px));gap:24px 4px}
+    .manage{right:14px;bottom:14px}
+    .shortcut-dialog{padding:22px 20px 18px}
+  }
+  @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
 </style>
 </head>
 <body>
 <main>
-<h1>Bookmarks</h1>
-{{if .Error}}<p class="error">{{.Error}}</p>{{end}}
-{{if .Pending}}<div class="pending">{{if .Duplicate}}Already saved — rename it?{{else}}Saved — rename it?{{end}}</div>{{end}}
-
-<div class="tools">
-  <a class="bmk" href="{{.Bookmarklet}}" draggable="true">★ Save to app</a>
-  <span class="hint">← drag me to your bookmarks bar</span>
-</div>
-
-<form class="paste" method="get" action="/save">
-  <input name="u" placeholder="…or paste a URL here" autocomplete="off" autofocus>
-  <button class="primary">Save</button>
-</form>
-<p class="hint">Save by pasting a URL, or by opening /&lt;url&gt;. A URL containing ? or # must use the paste box or /save?u=.</p>
-
-<div class="grid">
+<div class="grid" aria-label="Bookmarks">
 {{range .Bookmarks}}
-  <div class="card{{if and $.Pending (eq $.Pending.ID .ID)}} hot{{end}}" data-id="{{.ID}}" draggable="true">
-    <a class="t" href="{{.URL}}" target="_blank" rel="noopener" draggable="false">{{.Title}}</a>
-    <div class="u">{{.URL}}</div>
-    <form class="rename" method="post" action="/rename">
-      <input type="hidden" name="id" value="{{.ID}}">
-      <input name="title" value="{{.Title}}" aria-label="Title" autocomplete="off">
-      <button>Rename</button>
-    </form>
-    <form class="delete" method="post" action="/delete">
-      <input type="hidden" name="id" value="{{.ID}}">
-      <button>Remove</button>
-    </form>
+  <div class="bookmark" data-id="{{.ID}}" draggable="true">
+    <a class="bookmark-link" href="{{.URL}}" target="_blank" rel="noopener" draggable="false">
+      <span class="icon" aria-hidden="true"><span class="icon-fallback">{{initial .Title}}</span>{{if .HasFavicon}}<img class="icon-favicon" src="/favicon/{{.ID}}" alt="" draggable="false">{{end}}</span>
+      <span class="label">{{.Title}}</span>
+    </a>
+    <details class="bookmark-menu">
+      <summary class="menu-toggle" aria-label="More options for {{.Title}}" title="More options">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>
+      </summary>
+      <div class="bookmark-actions">
+      <a class="edit-shortcut" href="/?saved={{.ID}}" data-id="{{.ID}}" data-title="{{.Title}}" data-url="{{.URL}}">Edit shortcut</a>
+        <form method="post" action="/delete">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <button type="submit" class="remove">Remove</button>
+        </form>
+      </div>
+    </details>
   </div>
 {{else}}
-  <div class="empty">No bookmarks yet.</div>
+  <p class="empty">No bookmarks yet.</p>
 {{end}}
 </div>
 </main>
+
+<a class="manage" href="/?add=1" aria-label="Add shortcut" title="Add shortcut">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14 5 5 5M4 20l4.2-.8L19 8.4 15.6 5 4.8 15.8 4 20Z"/></svg>
+</a>
+
+<dialog class="shortcut-dialog" id="shortcut-dialog" aria-labelledby="dialog-title"{{if or .Pending .Error .Add}} open{{end}}>
+  <form id="shortcut-form" method="{{if .Pending}}post{{else}}get{{end}}" action="{{if .Pending}}/rename{{else}}/save{{end}}">
+    <input type="hidden" id="shortcut-id" name="id" value="{{if .Pending}}{{.Pending.ID}}{{end}}">
+    <h1 id="dialog-title">{{if .Pending}}Edit shortcut{{else}}Add shortcut{{end}}</h1>
+    <label for="shortcut-title">Name
+      <input id="shortcut-title" name="title" value="{{if .Pending}}{{.Pending.Title}}{{end}}" maxlength="160" autocomplete="off" required>
+    </label>
+    <label for="shortcut-url">URL
+      <input id="shortcut-url" name="u" value="{{if .Pending}}{{.Pending.URL}}{{end}}" inputmode="url" autocomplete="url" required>
+    </label>
+    <details class="bookmarklet-help">
+      <summary>Save pages from your browser</summary>
+      <a class="bmk" href="{{.Bookmarklet}}" draggable="true">Save to app</a>
+      <p>Drag this button to your bookmarks bar.</p>
+    </details>
+    <p class="dialog-error" id="dialog-error" aria-live="polite">{{if .Duplicate}}That URL is already in your bookmarks.{{else}}{{.Error}}{{end}}</p>
+    <div class="dialog-actions">
+      <a href="/" id="cancel-shortcut">Cancel</a>
+      <button type="submit" class="done" id="done-shortcut">Done</button>
+    </div>
+  </form>
+</dialog>
+
 <script>
-// Inline rename and delete: intercept the forms so the page does not reload.
-// With JS off the same forms post to /rename and /delete and the server
-// redirects back to the Start page, so both paths do the same thing.
 (function () {
-  document.querySelectorAll("form.rename, form.delete").forEach(function (form) {
-    form.addEventListener("submit", function (e) {
-      e.preventDefault();
-      fetch(form.action, { method: "POST", body: new FormData(form) })
-        .then(function (res) { if (!res.ok) throw new Error(res.status); return res; })
-        .then(function () {
-          var card = form.closest(".card");
-          if (form.classList.contains("delete")) {
-            card.remove();
-            if (!document.querySelector(".card")) location.reload();
-            return;
-          }
-          var input = form.querySelector('input[name="title"]');
-          var title = input.value.trim();
-          if (title === "") { input.value = card.querySelector(".t").textContent; return; }
-          card.querySelector(".t").textContent = title;
-          input.value = title;
-        })
-        .catch(function () { form.submit(); });
-    });
+  var dialog = document.getElementById("shortcut-dialog");
+  var form = document.getElementById("shortcut-form");
+  var title = document.getElementById("shortcut-title");
+  var url = document.getElementById("shortcut-url");
+  var id = document.getElementById("shortcut-id");
+  var heading = document.getElementById("dialog-title");
+  var message = document.getElementById("dialog-error");
+  var done = document.getElementById("done-shortcut");
+
+  document.querySelectorAll(".icon-favicon").forEach(function (image) {
+    function revealFavicon() {
+      if (image.naturalWidth > 0) image.closest(".icon").classList.add("has-favicon");
+    }
+    if (image.complete) revealFavicon();
+    else image.addEventListener("load", revealFavicon, { once: true });
   });
-})();
 
-// Drag to reorder: the grid follows the pointer, and on drop the new order is
-// posted to /reorder. With JS off the stored order simply stands.
-(function () {
+  function updateDone() {
+    done.disabled = !title.value.trim() || !url.value.trim();
+  }
+  function showAdd() {
+    form.method = "get";
+    form.action = "/save";
+    id.value = "";
+    title.value = "";
+    url.value = "";
+    heading.textContent = "Add shortcut";
+    message.textContent = "";
+    updateDone();
+    dialog.showModal();
+    title.focus();
+  }
+  function showEdit(button) {
+    form.method = "post";
+    form.action = "/rename";
+    id.value = button.dataset.id;
+    title.value = button.dataset.title;
+    url.value = button.dataset.url;
+    heading.textContent = "Edit shortcut";
+    message.textContent = "";
+    updateDone();
+    button.closest("details").open = false;
+    dialog.showModal();
+    title.focus();
+  }
+
+  document.querySelector(".manage").addEventListener("click", function (event) { event.preventDefault(); showAdd(); });
+  title.addEventListener("input", updateDone);
+  url.addEventListener("input", updateDone);
+  document.querySelectorAll(".edit-shortcut").forEach(function (button) {
+    button.addEventListener("click", function (event) { event.preventDefault(); showEdit(button); });
+  });
+  document.addEventListener("click", function (event) {
+    if (event.target.closest(".bookmark-menu")) {
+      document.querySelectorAll(".bookmark-menu[open]").forEach(function (menu) {
+        if (!menu.contains(event.target)) menu.open = false;
+      });
+      return;
+    }
+    document.querySelectorAll(".bookmark-menu[open]").forEach(function (menu) { menu.open = false; });
+  });
+
   var grid = document.querySelector(".grid");
-  if (!grid) return;
   var dragged = null;
-
   function cards() {
-    return Array.prototype.slice.call(grid.querySelectorAll(".card"));
+    return Array.prototype.slice.call(grid.querySelectorAll(".bookmark"));
   }
-
-  function save() {
-    var form = new FormData();
-    cards().forEach(function (card) { form.append("ids", card.dataset.id); });
-    fetch("/reorder", { method: "POST", body: form });
+  function saveOrder() {
+    var order = new FormData();
+    cards().forEach(function (card) { order.append("ids", card.dataset.id); });
+    fetch("/reorder", { method: "POST", body: order });
   }
-
-  // The card whose centre sits nearest the pointer is where the dragged card
-  // belongs among its neighbours.
-  function nearest(x, y) {
-    var best = null, bestDist = Infinity;
+  function nearestCard(x, y) {
+    var best = null, bestDistance = Infinity;
     cards().forEach(function (card) {
       if (card === dragged) return;
       var box = card.getBoundingClientRect();
       var dx = x - (box.left + box.width / 2);
       var dy = y - (box.top + box.height / 2);
-      var dist = dx * dx + dy * dy;
-      if (dist < bestDist) { bestDist = dist; best = card; }
+      var distance = dx * dx + dy * dy;
+      if (distance < bestDistance) { bestDistance = distance; best = card; }
     });
     return best;
   }
-
   cards().forEach(function (card) {
-    card.addEventListener("dragstart", function (e) {
+    card.addEventListener("dragstart", function (event) {
       dragged = card;
       card.classList.add("dragging");
-      e.dataTransfer.effectAllowed = "move";
-      // Firefox will not start a drag unless some data is set.
-      e.dataTransfer.setData("text/plain", card.dataset.id);
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", card.dataset.id);
     });
     card.addEventListener("dragend", function () {
       card.classList.remove("dragging");
+      if (dragged) saveOrder();
       dragged = null;
-      save();
+    });
+  });
+  grid.addEventListener("dragover", function (event) {
+    if (!dragged) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    var target = nearestCard(event.clientX, event.clientY);
+    if (!target) return;
+    var box = target.getBoundingClientRect();
+    grid.insertBefore(dragged, event.clientY < box.top + box.height / 2 ? target : target.nextSibling);
+  });
+
+  form.addEventListener("submit", function (event) {
+    event.preventDefault();
+    if (!form.reportValidity()) return;
+    updateDone();
+    done.disabled = true;
+    var method = form.method.toUpperCase();
+    var request;
+    if (method === "GET") {
+      var params = new URLSearchParams(new FormData(form));
+      request = fetch(form.action + "?" + params.toString(), { headers: { Accept: "application/json" } });
+    } else {
+      request = fetch(form.action, {
+        method: method,
+        body: new FormData(form),
+        headers: { Accept: "application/json" }
+      });
+    }
+    request.then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (result) {
+        if (!response.ok || !result.ok) throw new Error(result.error || "Could not save this shortcut.");
+        return result;
+      });
+    }).then(function (result) {
+      if (result.duplicate) {
+        message.textContent = "That URL is already in your bookmarks.";
+        updateDone();
+        return;
+      }
+      location.href = "/";
+    }).catch(function (error) {
+      message.textContent = error.message;
+      updateDone();
     });
   });
 
-  grid.addEventListener("dragover", function (e) {
-    if (!dragged) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    var target = nearest(e.clientX, e.clientY);
-    if (!target) return;
-    var box = target.getBoundingClientRect();
-    var above = e.clientY < box.top + box.height / 2;
-    grid.insertBefore(dragged, above ? target : target.nextSibling);
-  });
+  updateDone();
+  if (dialog.hasAttribute("open")) {
+    dialog.removeAttribute("open");
+    dialog.showModal();
+  }
 })();
 
 // Register the service worker so the browser offers to install the app. Only in
-// a secure context: over plain HTTP (the MVP's deployment) there is nothing to
-// install, and registering would only log a failure.
+// a secure context: over plain HTTP there is nothing to install.
 if ('serviceWorker' in navigator && window.isSecureContext) {
   navigator.serviceWorker.register('/sw.js');
 }

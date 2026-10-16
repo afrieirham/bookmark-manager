@@ -5,15 +5,17 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
 
 // saveJSON is the machine-readable save result a client asking for JSON gets.
 type saveJSON struct {
-	OK    bool   `json:"ok"`
-	ID    int64  `json:"id"`
-	Error string `json:"error"`
+	OK        bool   `json:"ok"`
+	ID        int64  `json:"id"`
+	Duplicate bool   `json:"duplicate"`
+	Error     string `json:"error"`
 }
 
 // jsonClient is the Accept header a script sends when it wants JSON rather than
@@ -53,8 +55,8 @@ func TestSaveAnswersJSONWhenTheClientAsksForIt(t *testing.T) {
 }
 
 // TestSaveAnswersJSONForADuplicateWithTheExistingID pins the contract a script
-// relies on: saving the same URL twice succeeds both times, with the same id, so
-// the caller need not tell a first save from a repeat.
+// relies on: a duplicate save succeeds with the existing id and marks the
+// response as a duplicate.
 func TestSaveAnswersJSONForADuplicateWithTheExistingID(t *testing.T) {
 	h := newHandler(t, filepath.Join(t.TempDir(), "db.sqlite"), stubFetcher{})
 
@@ -64,11 +66,15 @@ func TestSaveAnswersJSONForADuplicateWithTheExistingID(t *testing.T) {
 	if !first.OK || !second.OK {
 		t.Fatalf("got %+v then %+v, want both ok", first, second)
 	}
+	if first.Duplicate || !second.Duplicate {
+		t.Errorf("duplicate flags = %v then %v, want false then true", first.Duplicate, second.Duplicate)
+	}
 	if first.ID != second.ID {
 		t.Errorf("duplicate save reported id %d, want the first save's %d", second.ID, first.ID)
 	}
-	if n := strings.Count(get(t, h, "/", nil).Body.String(), `class="card`); n != 1 {
-		t.Errorf("grid has %d cards, want 1 after a duplicate save", n)
+	wantID := strconv.FormatInt(first.ID, 10)
+	if ids := gridOrder(t, get(t, h, "/", nil).Body.String()); !equalIDs(ids, []string{wantID}) {
+		t.Errorf("grid has bookmarks %v, want only %s after a duplicate save", ids, wantID)
 	}
 }
 

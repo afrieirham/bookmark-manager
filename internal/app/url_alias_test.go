@@ -20,8 +20,8 @@ func TestVisitingABareURLSavesIt(t *testing.T) {
 		t.Fatalf("Location = %q, want %q", loc, "/?saved=1")
 	}
 	page := get(t, h, rr.Header().Get("Location"), nil).Body.String()
-	if !strings.Contains(page, "Saved — rename it?") {
-		t.Errorf("visiting a bare URL does not show the pending-rename result:\n%s", page)
+	if !strings.Contains(page, "Edit shortcut") {
+		t.Errorf("visiting a bare URL does not open the edit dialog:\n%s", page)
 	}
 	if !strings.Contains(page, "example.com") {
 		t.Errorf("the bare URL was not saved:\n%s", page)
@@ -68,15 +68,14 @@ func TestKnownRoutesAreNeverSavedAsURLs(t *testing.T) {
 	}
 }
 
-// TestStartPageDocumentsThatAQueryURLUsesTheSaveEndpoint pins the one limit of
-// the path alias: a URL carrying a query or fragment cannot survive as a path,
-// so the Start page must send those to /save?u=.
+// TestStartPageProvidesAURLFieldForQueryURLs ensures the shortcut dialog can
+// save URLs containing a query or fragment through the /save endpoint.
 func TestStartPageDocumentsThatAQueryURLUsesTheSaveEndpoint(t *testing.T) {
 	h := newHandler(t, filepath.Join(t.TempDir(), "db.sqlite"), stubFetcher{})
 
 	page := get(t, h, "/", nil).Body.String()
-	if !strings.Contains(page, "A URL containing ? or # must use the paste box or /save?u=.") {
-		t.Errorf("Start page does not document that ? and # URLs need /save?u=:\n%s", page)
+	if !strings.Contains(page, `name="u"`) || !strings.Contains(page, `action="/save"`) {
+		t.Errorf("shortcut dialog does not submit the URL through /save:\n%s", page)
 	}
 }
 

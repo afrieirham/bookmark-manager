@@ -10,11 +10,14 @@ import (
 
 // Bookmark is a saved URL with a Title, as shown on the Start page.
 type Bookmark struct {
-	ID        int64
-	URL       string
-	Title     string
-	CreatedAt time.Time
-	Position  int
+	ID          int64
+	URL         string
+	Title       string
+	HasFavicon  bool
+	Favicon     []byte
+	FaviconType string
+	CreatedAt   time.Time
+	Position    int
 }
 
 // NormalizeURL turns raw into the URL a Bookmark stores: surrounding space
