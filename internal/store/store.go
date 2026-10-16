@@ -117,6 +117,16 @@ func (s *SQLite) Rename(ctx context.Context, id int64, title string) error {
 	return nil
 }
 
+// Update changes a Bookmark's title and URL while keeping its identity and
+// position in the grid.
+func (s *SQLite) Update(ctx context.Context, id int64, title, rawURL string) error {
+	if _, err := s.db.ExecContext(ctx,
+		`UPDATE bookmarks SET title = ?, url = ? WHERE id = ?`, title, rawURL, id); err != nil {
+		return fmt.Errorf("update bookmark: %w", err)
+	}
+	return nil
+}
+
 // Delete removes the Bookmark with id. Deleting a missing Bookmark is a no-op.
 func (s *SQLite) Delete(ctx context.Context, id int64) error {
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM bookmarks WHERE id = ?`, id); err != nil {

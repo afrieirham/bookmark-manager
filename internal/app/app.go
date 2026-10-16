@@ -49,6 +49,7 @@ type Store interface {
 	Get(ctx context.Context, id int64) (domain.Bookmark, bool, error)
 	Insert(ctx context.Context, b domain.Bookmark) (domain.Bookmark, error)
 	Rename(ctx context.Context, id int64, title string) error
+	Update(ctx context.Context, id int64, title, url string) error
 	Delete(ctx context.Context, id int64) error
 	Reorder(ctx context.Context, ids []int64) error
 }
@@ -87,10 +88,32 @@ func New(store Store, fetcher Fetcher, cfg Config) *Server {
 		store:   store,
 		fetcher: fetcher,
 		cfg:     cfg,
-		tmpl:    template.Must(template.ParseFS(templatesFS, "templates/*.html")),
-		static:  http.StripPrefix(staticPrefix, http.FileServer(http.FS(staticDir))),
-		now:     time.Now,
+		tmpl: template.Must(template.New("start.html").Funcs(template.FuncMap{
+			"initial":    bookmarkInitial,
+			"faviconURL": bookmarkFaviconURL,
+		}).ParseFS(templatesFS, "templates/*.html")),
+		static: http.StripPrefix(staticPrefix, http.FileServer(http.FS(staticDir))),
+		now:    time.Now,
 	}
+}
+
+func bookmarkInitial(title string) string {
+	for _, r := range strings.TrimSpace(title) {
+		return strings.ToUpper(string(r))
+	}
+	return "?"
+}
+
+func bookmarkFaviconURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Hostname() == "" || u.User != nil {
+		return ""
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return ""
+	}
+	return (&url.URL{Scheme: scheme, Host: u.Host, Path: "/favicon.ico"}).String()
 }
 
 // Handler returns the HTTP routes. The PWA files are registered first, ahead of
@@ -181,8 +204,11 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if r.URL.Query().Get("error") != "" {
-		data.Error = "That does not look like a URL."
+	switch r.URL.Query().Get("error") {
+	case "invalid":
+		data.Error = "Enter a valid name and URL."
+	case "duplicate":
+		data.Error = "That URL is already in your bookmarks."
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -336,9 +362,9 @@ func savedLocation(id int64, duplicate bool) string {
 	return loc
 }
 
-// handleRename applies a new Title to a Bookmark. It is the plain form target
-// the Start page posts to, so it works with JS off; an inline fetch uses the
-// same endpoint. A blank Title is ignored (the Bookmark is left alone).
+// handleRename updates a Bookmark's title and URL. The plain form redirect is
+// the no-JavaScript fallback; the dialog uses the JSON response to stay open
+// when it needs to show a validation error.
 func (s *Server) handleRename(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PostFormValue("id"), 10, 64)
 	if err != nil {
@@ -354,13 +380,52 @@ func (s *Server) handleRename(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-	if renamed, applied := domain.Rename(b, r.PostFormValue("title")); applied {
+	renamed, applied := domain.Rename(b, r.PostFormValue("title"))
+	if !applied {
+		s.respondUpdateError(w, r, http.StatusBadRequest, "Enter a name and URL.", "invalid")
+		return
+	}
+	rawURL := r.PostFormValue("u")
+	if rawURL == "" {
 		if err := s.store.Rename(r.Context(), id, renamed.Title); err != nil {
 			s.fail(w, err)
 			return
 		}
+	} else {
+		normalizedURL, valid := domain.NormalizeURL(rawURL)
+		if !valid {
+			s.respondUpdateError(w, r, http.StatusBadRequest, "Enter a valid URL.", "invalid")
+			return
+		}
+		bookmarks, err := s.store.List(r.Context())
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		for _, other := range bookmarks {
+			if other.ID != id && other.URL == normalizedURL {
+				s.respondUpdateError(w, r, http.StatusConflict, "That URL is already in your bookmarks.", "duplicate")
+				return
+			}
+		}
+		if err := s.store.Update(r.Context(), id, renamed.Title, normalizedURL); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+	if wantsJSON(r) {
+		writeJSON(w, saveResult{OK: true, ID: id}, http.StatusOK)
+		return
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) respondUpdateError(w http.ResponseWriter, r *http.Request, status int, message, code string) {
+	if wantsJSON(r) {
+		writeJSON(w, saveResult{OK: false, Error: message}, status)
+		return
+	}
+	http.Redirect(w, r, "/?error="+code, http.StatusSeeOther)
 }
 
 // handleDelete removes a Bookmark. Like handleRename it backs the plain form
