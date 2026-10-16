@@ -15,6 +15,11 @@ WORKDIR /src
 ARG TARGETOS
 ARG TARGETARCH
 
+# CA certificates for the page-<title> fetcher's https requests. Installed here,
+# on the build platform, because the runtime stage runs on the target platform
+# and an arm64 `apk` cannot run on the amd64 publisher without emulation.
+RUN apk add --no-cache ca-certificates
+
 # Download modules first so this layer is cached across source edits.
 COPY go.mod go.sum ./
 RUN go mod download
@@ -35,10 +40,11 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
 # 2026, so a published image must not sit on it.
 FROM alpine:3.24
 
-# CA certificates so the page-<title> fetcher can reach https sites. The busybox
-# wget is deliberately kept: the compose healthcheck uses it.
-RUN apk add --no-cache ca-certificates
-
+# The CA bundle comes from the build stage rather than an `apk add` here, so this
+# stage runs no command and builds for any target platform without emulation.
+# Go reads this path on Linux, so the page-<title> fetcher can reach https sites.
+# The busybox wget is deliberately kept: the compose healthcheck uses it.
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=build /out/bookmarks /usr/local/bin/bookmarks
 
 # The SQLite file lives on a mounted volume. /data is created and handed to the
