@@ -103,12 +103,14 @@ func (s *SQLite) List(ctx context.Context) ([]domain.Bookmark, error) {
 	var out []domain.Bookmark
 	for rows.Next() {
 		var (
-			b         domain.Bookmark
-			createdAt string
+			b          domain.Bookmark
+			createdAt  string
+			hasFavicon int64
 		)
-		if err := rows.Scan(&b.ID, &b.URL, &b.Title, &createdAt, &b.Position, &b.HasFavicon); err != nil {
+		if err := rows.Scan(&b.ID, &b.URL, &b.Title, &createdAt, &b.Position, &hasFavicon); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
 		}
+		b.HasFavicon = hasFavicon != 0
 		b.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
 		out = append(out, b)
 	}
@@ -118,20 +120,22 @@ func (s *SQLite) List(ctx context.Context) ([]domain.Bookmark, error) {
 // Get returns the Bookmark with id, and whether it exists.
 func (s *SQLite) Get(ctx context.Context, id int64) (domain.Bookmark, bool, error) {
 	var (
-		b         domain.Bookmark
-		createdAt string
+		b          domain.Bookmark
+		createdAt  string
+		hasFavicon int64
 	)
 	err := s.db.QueryRowContext(ctx,
 		`SELECT id, url, title, created_at, position,
 			favicon IS NOT NULL AND length(favicon) > 0
 		 FROM bookmarks WHERE id = ?`, id).
-		Scan(&b.ID, &b.URL, &b.Title, &createdAt, &b.Position, &b.HasFavicon)
+		Scan(&b.ID, &b.URL, &b.Title, &createdAt, &b.Position, &hasFavicon)
 	if err == sql.ErrNoRows {
 		return domain.Bookmark{}, false, nil
 	}
 	if err != nil {
 		return domain.Bookmark{}, false, fmt.Errorf("get: %w", err)
 	}
+	b.HasFavicon = hasFavicon != 0
 	b.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
 	return b, true, nil
 }
