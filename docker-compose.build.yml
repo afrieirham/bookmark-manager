@@ -1,0 +1,5 @@
+# Optional override to build the published image from the current checkout.
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+services:
+  bookmarks:
+    build: .

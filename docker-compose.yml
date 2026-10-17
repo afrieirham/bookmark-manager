@@ -7,12 +7,9 @@
 # The app then listens on http://localhost:8080/ (see deploy/README.md).
 services:
   bookmarks:
-    # Built from this checkout, so a fresh `git clone` plus `docker compose up -d`
-    # works on its own. To run the released image instead, comment out `build:`
-    # and uncomment `image:` — note that the ghcr package must be public for the
-    # pull to succeed, which is a one-time step in its package settings.
-    build: .
-    # image: ghcr.io/afrieirham/bookmark-manager:latest
+    # Pull the published image by default. For a local build, use the
+    # docker-compose.build.yml override described in README.md.
+    image: ghcr.io/afrieirham/bookmark-manager:latest
     restart: unless-stopped
     ports:
       - "8080:8080"
