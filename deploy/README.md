@@ -9,7 +9,7 @@ Artifacts:
 | File | Purpose |
 |---|---|
 | [`Dockerfile`](../Dockerfile) | Multi-stage build; static binary, `CGO_ENABLED=0`, runs unprivileged. |
-| [`docker-compose.yml`](../docker-compose.yml) | Compose service built from the checkout, with a bind mount for SQLite. |
+| [`docker-compose.yml`](../docker-compose.yml) | Compose service using the published image, with a bind mount for SQLite. |
 | [`.env.example`](../.env.example) | Copy to `.env` and set `TOKEN`. |
 | [`nginx.conf`](nginx.conf) | Example nginx `server` block (plain HTTP). |
 
@@ -59,12 +59,11 @@ mkdir -p data && sudo chown -R 65532:65532 data   # the container runs unprivile
 docker compose up -d
 ```
 
-The app is then at <http://localhost:8080/>. Compose builds the image from the
-checkout, so this path needs no registry access. The published
-`ghcr.io/afrieirham/bookmark-manager:latest` runs instead when you swap `build:`
-for `image:` — see **Run the published image** below. Either way the image is
-built for `linux/amd64` and `linux/arm64`, so it runs on a VPS or an ARM box
-such as a Raspberry Pi.
+The app is then at <http://localhost:8080/>. Compose pulls the published
+`ghcr.io/afrieirham/bookmark-manager:latest` image by default. For a local
+build, use the optional override described below. The published image supports
+`linux/amd64` and `linux/arm64`, so it runs on a VPS or an ARM box such as a
+Raspberry Pi.
 
 ### Storage: bind mount or named volume
 
@@ -106,17 +105,21 @@ docker compose start bookmarks
 
 Backups are otherwise the operator's job: the spec has no app-level backup.
 
-### Run the published image
+### Pull updates or build locally
 
-To run the released image rather than building the checkout, comment out
-`build:` and uncomment `image:` in `docker-compose.yml`, then:
+The default Compose file pulls the published image. To update it:
 
 ```sh
 docker compose pull && docker compose up -d
 ```
 
-The ghcr package has to be public for that pull to succeed — a one-time step in
-its package settings, since the first push creates it private.
+To build from the checkout, use the optional build override:
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+```
+
+The GHCR package must be public for the pull to succeed.
 
 ## Put it behind a reverse proxy
 
