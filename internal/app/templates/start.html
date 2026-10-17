@@ -108,7 +108,7 @@
     <input type="hidden" id="shortcut-id" name="id" value="{{if .Pending}}{{.Pending.ID}}{{end}}">
     <h1 id="dialog-title">{{if .Pending}}Edit shortcut{{else}}Add shortcut{{end}}</h1>
     <label for="shortcut-title">Name
-      <input id="shortcut-title" name="title" value="{{if .Pending}}{{.Pending.Title}}{{end}}" maxlength="160" autocomplete="off" required>
+      <input id="shortcut-title" name="title" value="{{if .Pending}}{{.Pending.Title}}{{end}}" maxlength="160" autocomplete="off"{{if .Pending}} required{{else}} placeholder="Leave blank to use the page title"{{end}}>
     </label>
     <label for="shortcut-url">URL
       <input id="shortcut-url" name="u" value="{{if .Pending}}{{.Pending.URL}}{{end}}" inputmode="url" autocomplete="url" required>
@@ -145,12 +145,17 @@
     else image.addEventListener("load", revealFavicon, { once: true });
   });
 
+  // Name is required only when renaming. A blank Name on add lets the server
+  // read the page's <title>, so the Done button must not wait for one.
   function updateDone() {
-    done.disabled = !title.value.trim() || !url.value.trim();
+    var renaming = form.method === "post";
+    done.disabled = (renaming && !title.value.trim()) || !url.value.trim();
   }
   function showAdd() {
     form.method = "get";
     form.action = "/save";
+    title.required = false;
+    title.placeholder = "Leave blank to use the page title";
     id.value = "";
     title.value = "";
     url.value = "";
@@ -163,6 +168,8 @@
   function showEdit(button) {
     form.method = "post";
     form.action = "/rename";
+    title.required = true;
+    title.placeholder = "";
     id.value = button.dataset.id;
     title.value = button.dataset.title;
     url.value = button.dataset.url;
