@@ -70,8 +70,9 @@ app exits at startup saying it cannot open the database. If you would rather not
 manage a host directory, swap the volume line for the Docker-managed alternative
 described in the file, which needs no `chown`.
 
-Compose pulls the published `latest` image from GitHub Container Registry. To
-update an existing install, run `docker compose pull` followed by
+Compose pulls the published `latest` image from GitHub Container Registry.
+This tag updates when you publish a version tag; pushes to `main` do not publish
+an image. To update an existing install, run `docker compose pull` followed by
 `docker compose up -d`. The `data` directory is preserved across container
 replacements.
 
