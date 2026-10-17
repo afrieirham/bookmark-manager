@@ -315,3 +315,39 @@ func TestSaveDoesNotFetchWhenATitleIsGiven(t *testing.T) {
 		t.Error("the page was fetched even though a Title was given")
 	}
 }
+
+// TestSavingWithoutANameUsesThePageTitle covers the Add dialog's path: a blank
+// Name is sent as an empty title, and the save must read the page's <title>
+// rather than falling back to the host.
+func TestSavingWithoutANameUsesThePageTitle(t *testing.T) {
+	h := newHandler(t, filepath.Join(t.TempDir(), "db.sqlite"), stubFetcher{title: "Fetched Title", ok: true})
+
+	get(t, h, "/save?u="+url.QueryEscape("https://example.com")+"&title=", nil)
+
+	page := get(t, h, "/", nil).Body.String()
+	if !strings.Contains(page, "Fetched Title") {
+		t.Errorf("a save with no Name did not use the page title:\n%s", page)
+	}
+}
+
+// TestAddDialogDoesNotRequireAName keeps Name optional when adding a shortcut,
+// since a blank Name is what lets the server fetch the page title. Editing still
+// requires one.
+func TestAddDialogDoesNotRequireAName(t *testing.T) {
+	h := newHandler(t, filepath.Join(t.TempDir(), "db.sqlite"), stubFetcher{})
+
+	page := get(t, h, "/?add=1", nil).Body.String()
+	if field := inputTag(page, "shortcut-title"); strings.Contains(field, " required") {
+		t.Errorf("Add dialog requires a Name, so the page title is never fetched:\n%s", field)
+	}
+}
+
+// inputTag returns the opening <input> tag with the given id.
+func inputTag(page, id string) string {
+	start := strings.Index(page, `id="`+id+`"`)
+	if start < 0 {
+		return ""
+	}
+	end := strings.Index(page[start:], ">")
+	return page[start : start+end]
+}
