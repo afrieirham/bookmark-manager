@@ -76,7 +76,7 @@
 <div class="grid" aria-label="Bookmarks">
 {{range .Bookmarks}}
   <div class="bookmark" data-id="{{.ID}}" draggable="true">
-    <a class="bookmark-link" href="{{.URL}}" target="_blank" rel="noopener" draggable="false">
+    <a class="bookmark-link" href="{{.URL}}" draggable="false">
       <span class="icon" aria-hidden="true"><span class="icon-fallback">{{initial .Title}}</span>{{if .HasFavicon}}<img class="icon-favicon" src="/favicon/{{.ID}}" alt="" draggable="false">{{end}}</span>
       <span class="label">{{.Title}}</span>
     </a>
