@@ -121,6 +121,20 @@ func TestReorderRejectsMalformedMultipart(t *testing.T) {
 	}
 }
 
+func TestReorderRejectsMalformedURLEncodedForm(t *testing.T) {
+	h := newHandler(t, filepath.Join(t.TempDir(), "db.sqlite"), stubFetcher{})
+	saveThree(t, h)
+	rr := serve(t, h, request(t, http.MethodPost, "/reorder", map[string]string{
+		"Content-Type": "application/x-www-form-urlencoded",
+	}, strings.NewReader("ids=3&ids=%ZZ&ids=1")))
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rr.Code)
+	}
+	if got := gridOrder(t, get(t, h, "/", nil).Body.String()); !equalIDs(got, []string{"1", "2", "3"}) {
+		t.Errorf("grid order after malformed request = %v, want [1 2 3]", got)
+	}
+}
+
 func TestNewBookmarkIsAppendedAtTheEnd(t *testing.T) {
 	h := newHandler(t, filepath.Join(t.TempDir(), "db.sqlite"), stubFetcher{})
 	saveThree(t, h)
