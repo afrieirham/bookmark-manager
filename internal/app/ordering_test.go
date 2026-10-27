@@ -1,6 +1,8 @@
 package app_test
 
 import (
+	"bytes"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -70,6 +72,52 @@ func TestReorderStoresTheOrderAndItSurvivesAReload(t *testing.T) {
 	restarted := app.New(openStore(t, dbPath), stubFetcher{}, app.Config{Token: testToken}).Handler()
 	if got := gridOrder(t, get(t, restarted, "/", nil).Body.String()); !equalIDs(got, []string{"3", "1", "2"}) {
 		t.Errorf("grid order after a restart = %v, want [3 1 2]", got)
+	}
+}
+
+// Drag-and-drop sends FormData, which fetch encodes as multipart/form-data.
+func TestMultipartReorderSurvivesAReload(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "db.sqlite")
+	h := newHandler(t, dbPath, stubFetcher{})
+	saveThree(t, h)
+
+	var body bytes.Buffer
+	form := multipart.NewWriter(&body)
+	for _, id := range []string{"3", "1", "2"} {
+		if err := form.WriteField("ids", id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := form.Close(); err != nil {
+		t.Fatal(err)
+	}
+	rr := serve(t, h, request(t, http.MethodPost, "/reorder", map[string]string{
+		"Content-Type": form.FormDataContentType(),
+	}, &body))
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303", rr.Code)
+	}
+
+	if got := gridOrder(t, get(t, h, "/", nil).Body.String()); !equalIDs(got, []string{"3", "1", "2"}) {
+		t.Errorf("grid order after refresh = %v, want [3 1 2]", got)
+	}
+	restarted := app.New(openStore(t, dbPath), stubFetcher{}, app.Config{Token: testToken}).Handler()
+	if got := gridOrder(t, get(t, restarted, "/", nil).Body.String()); !equalIDs(got, []string{"3", "1", "2"}) {
+		t.Errorf("grid order after restart = %v, want [3 1 2]", got)
+	}
+}
+
+func TestReorderRejectsMalformedMultipart(t *testing.T) {
+	h := newHandler(t, filepath.Join(t.TempDir(), "db.sqlite"), stubFetcher{})
+	saveThree(t, h)
+	rr := serve(t, h, request(t, http.MethodPost, "/reorder", map[string]string{
+		"Content-Type": "multipart/form-data; boundary=unfinished",
+	}, strings.NewReader("--unfinished\r\nContent-Disposition: form-data; name=\"ids\"\r\n\r\n3")))
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+	if got := gridOrder(t, get(t, h, "/", nil).Body.String()); !equalIDs(got, []string{"1", "2", "3"}) {
+		t.Errorf("grid order after malformed request = %v, want [1 2 3]", got)
 	}
 }
 

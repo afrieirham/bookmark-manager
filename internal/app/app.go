@@ -520,9 +520,14 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 // script. The domain decides what the full order is, so a partial or stale list
 // still leaves every Bookmark on the grid.
 func (s *Server) handleReorder(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
+	// The drag-and-drop script sends multipart FormData. ParseMultipartForm
+	// also parses ordinary URL-encoded forms before returning ErrNotMultipart.
+	if err := r.ParseMultipartForm(1 << 20); err != nil && err != http.ErrNotMultipart {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
+	}
+	if r.MultipartForm != nil {
+		defer r.MultipartForm.RemoveAll()
 	}
 	existing, err := s.store.List(r.Context())
 	if err != nil {
