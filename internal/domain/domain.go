@@ -3,6 +3,7 @@
 package domain
 
 import (
+	"errors"
 	"net/url"
 	"strings"
 	"time"
@@ -18,6 +19,32 @@ type Bookmark struct {
 	FaviconType string
 	CreatedAt   time.Time
 	Position    int
+	FolderID    int64
+}
+
+var ErrFolder = errors.New("folder does not exist")
+var ErrFolderTitle = errors.New("use a folder name of 1–160 characters that is unique in its parent folder")
+
+// Folder groups Bookmarks and child Folders. ParentID zero is the Start page.
+type Folder struct {
+	ID       int64
+	Title    string
+	ParentID int64
+}
+
+// ImportDocument uses local Folder IDs (one-based, in parent-before-child
+// order). Storage resolves these IDs in one transaction.
+type ImportDocument struct {
+	Folders   []Folder
+	Bookmarks []Bookmark
+	Skipped   int
+}
+
+type ImportResult struct {
+	Added      int
+	Folders    int
+	Duplicates int
+	Skipped    int
 }
 
 // NormalizeURL turns raw into the URL a Bookmark stores: surrounding space

@@ -15,6 +15,11 @@ nothing from a CDN.
 ## What it does
 
 - **A Start page.** Your saved URLs as a grid, at the app root.
+- **Folders.** Create nested folders, rename them, and choose a folder when
+  adding or editing a bookmark. Removing a folder keeps its contents in its
+  parent folder.
+- **Import from Chrome.** Upload a Chrome bookmarks HTML export to bring over
+  titles and nested folders. Existing URLs are kept and duplicates are skipped.
 - **Several ways to save.** The add dialog's URL field, a bare-URL alias
   (`/example.com/deep/page` saves that URL), a draggable bookmarklet, and an
   Android share target, so a link reaches the app straight from the share sheet.
@@ -83,6 +88,39 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 
 This builds the same image name from the local source and starts it with the
 same Compose settings.
+
+## Folders and Chrome import
+
+Choose **New folder** on the Start page or inside a folder to create a
+subfolder. Open a folder to see its contents; use the navigation at the top to
+return to its parent. A bookmark's **Edit shortcut** dialog lets you move it to
+any folder or back to the Start page. **Folder options** lets you rename or
+remove the current folder. Removing a folder moves its bookmarks and subfolders
+to its parent. If a subfolder's name conflicts with another folder there,
+rename it before removing the folder.
+
+To bring your Chrome bookmarks over:
+
+1. On a computer, open Chrome's **Bookmarks and lists → Bookmark manager**.
+2. In the bookmark manager's menu, choose **Export bookmarks** and save the HTML
+   file. [Google's export instructions](https://support.google.com/chrome/answer/96816).
+3. In this app, choose **Import from Chrome**, select that file, choose the
+   destination folder, and select **Import bookmarks**.
+
+The import preserves titles, nested folders (including empty ones), and saved
+dates when available. Matching folder paths are reused. Duplicate URLs are
+skipped across the whole app and within the file, leaving existing bookmarks'
+titles and folders unchanged. URL normalization follows the usual save rules,
+including ignoring fragments. The result reports added bookmarks, created
+folders, duplicate URLs, and unsupported URLs. Only HTTP and HTTPS bookmarks are
+supported; browser pages, local files, and bookmarklets are skipped.
+
+Import is a one-time file upload, not live Chrome sync. It does not fetch saved
+sites or their favicons; imported bookmarks use their title's initial as an
+icon. Files must be smaller than 20 MB, contain at most 100,000 entries, and
+nest at most 128 lists deep. Invalid files leave your saved data untouched,
+and each import commits in one database transaction. Existing installations
+upgrade automatically, keeping existing bookmarks on the Start page.
 
 ## Configuration
 
