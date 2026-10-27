@@ -51,12 +51,17 @@ func (f FetcherFunc) Title(ctx context.Context, url string) (string, bool) { ret
 
 // Store is the persistence the Start page needs.
 type Store interface {
+	ListFolders(ctx context.Context) ([]domain.Folder, error)
+	CreateFolder(ctx context.Context, title string, parentID int64) (int64, error)
+	RenameFolder(ctx context.Context, id int64, title string) error
+	DeleteFolder(ctx context.Context, id int64) error
+	Import(ctx context.Context, doc domain.ImportDocument, parentID int64, now time.Time) (domain.ImportResult, error)
 	List(ctx context.Context) ([]domain.Bookmark, error)
 	Get(ctx context.Context, id int64) (domain.Bookmark, bool, error)
 	Favicon(ctx context.Context, id int64) ([]byte, string, bool, error)
 	Insert(ctx context.Context, b domain.Bookmark) (domain.Bookmark, error)
-	Rename(ctx context.Context, id int64, title string) error
-	Update(ctx context.Context, id int64, title, url string, favicon []byte, faviconType string) error
+	Rename(ctx context.Context, id int64, title string, folderID int64) error
+	Update(ctx context.Context, id int64, title, url string, favicon []byte, faviconType string, folderID int64) error
 	Delete(ctx context.Context, id int64) error
 	Reorder(ctx context.Context, ids []int64) error
 }
@@ -130,6 +135,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /rename", s.handleRename)
 	mux.HandleFunc("POST /delete", s.handleDelete)
 	mux.HandleFunc("POST /reorder", s.handleReorder)
+	mux.HandleFunc("POST /folders/create", s.handleCreateFolder)
+	mux.HandleFunc("POST /folders/rename", s.handleRenameFolder)
+	mux.HandleFunc("POST /folders/delete", s.handleDeleteFolder)
+	mux.HandleFunc("POST /import", s.handleImport)
 	mux.HandleFunc("GET "+loginPath, s.handleLoginForm)
 	mux.HandleFunc("POST "+loginPath, s.handleLogin)
 	mux.HandleFunc("GET /{url...}", s.handleAlias)
@@ -221,16 +230,30 @@ func serveEmbedded(w http.ResponseWriter, name string) {
 }
 
 type startData struct {
-	Bookmarks   []domain.Bookmark
-	Pending     *domain.Bookmark
-	Duplicate   bool
-	Add         bool
-	Error       string
-	BaseURL     string
-	Bookmarklet template.URL
+	FolderID      int64
+	CurrentFolder *domain.Folder
+	Folders       []domain.Folder
+	FolderOptions []folderOption
+	Breadcrumbs   []domain.Folder
+	Location      string
+	Notice        string
+	FolderError   string
+	ImportError   string
+	ImportOpen    bool
+	Bookmarks     []domain.Bookmark
+	Pending       *domain.Bookmark
+	Duplicate     bool
+	Add           bool
+	Error         string
+	BaseURL       string
+	Bookmarklet   template.URL
 }
 
 func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
+	s.renderStart(w, r, http.StatusOK)
+}
+
+func (s *Server) renderStart(w http.ResponseWriter, r *http.Request, status int) {
 	bookmarks, err := s.store.List(r.Context())
 	if err != nil {
 		s.fail(w, err)
@@ -260,11 +283,17 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Query().Get("error") {
 	case "invalid":
 		data.Error = "Enter a valid name and URL."
+	case "folder":
+		data.Error = "Choose an existing folder."
 	case "duplicate":
 		data.Error = "That URL is already in your bookmarks."
 	}
 
+	if !s.prepareFolders(w, r, &data) {
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
 	if err := s.tmpl.ExecuteTemplate(w, "start.html", data); err != nil {
 		log.Printf("app: render Start page: %v", err)
 	}
@@ -319,7 +348,7 @@ func looksLikeHost(path string) bool {
 func isKnownRoute(path string) bool {
 	full := "/" + path
 	switch full {
-	case "/save", "/rename", "/delete", "/reorder", loginPath, healthPath, manifestPath, serviceWorkerPath:
+	case "/save", "/rename", "/delete", "/reorder", "/import", "/folders/create", "/folders/rename", "/folders/delete", loginPath, healthPath, manifestPath, serviceWorkerPath:
 		return true
 	// Not routes the app serves, but paths a browser or a crawler asks for
 	// unprompted. They are not URLs anyone meant to save, and the wildcard would
@@ -339,6 +368,15 @@ func (s *Server) save(w http.ResponseWriter, r *http.Request, raw, given string)
 		return
 	}
 
+	folderID, valid, err := s.readFolder(r, r.URL.Query().Get("folder"), 0)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if !valid {
+		s.respondSaveError(w, r)
+		return
+	}
 	fetched, fetchedOK := "", false
 	if strings.TrimSpace(given) == "" {
 		fetched, fetchedOK = s.fetcher.Title(r.Context(), nu)
@@ -358,6 +396,7 @@ func (s *Server) save(w http.ResponseWriter, r *http.Request, raw, given string)
 		s.respondSaved(w, r, res.Bookmark.ID, true)
 		return
 	}
+	res.Bookmark.FolderID = folderID
 	if iconFetcher, ok := s.fetcher.(FaviconFetcher); ok {
 		res.Bookmark.Favicon, res.Bookmark.FaviconType, _ = iconFetcher.Favicon(r.Context(), nu)
 	}
@@ -438,13 +477,22 @@ func (s *Server) handleRename(w http.ResponseWriter, r *http.Request) {
 	}
 	title := r.PostFormValue("title")
 	rawURL := r.PostFormValue("u")
+	folderID, valid, err := s.readFolder(r, r.PostFormValue("folder"), b.FolderID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if !valid {
+		s.respondUpdateError(w, r, id, title, rawURL, http.StatusBadRequest, "Choose an existing folder.", "folder")
+		return
+	}
 	renamed, applied := domain.Rename(b, title)
 	if !applied {
 		s.respondUpdateError(w, r, id, title, rawURL, http.StatusBadRequest, "Enter a name and URL.", "invalid")
 		return
 	}
 	if rawURL == "" {
-		if err := s.store.Rename(r.Context(), id, renamed.Title); err != nil {
+		if err := s.store.Rename(r.Context(), id, renamed.Title, folderID); err != nil {
 			s.fail(w, err)
 			return
 		}
@@ -466,7 +514,7 @@ func (s *Server) handleRename(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if normalizedURL == b.URL {
-			if err := s.store.Rename(r.Context(), id, renamed.Title); err != nil {
+			if err := s.store.Rename(r.Context(), id, renamed.Title, folderID); err != nil {
 				s.fail(w, err)
 				return
 			}
@@ -476,7 +524,7 @@ func (s *Server) handleRename(w http.ResponseWriter, r *http.Request) {
 			if iconFetcher, ok := s.fetcher.(FaviconFetcher); ok {
 				favicon, faviconType, _ = iconFetcher.Favicon(r.Context(), normalizedURL)
 			}
-			if err := s.store.Update(r.Context(), id, renamed.Title, normalizedURL, favicon, faviconType); err != nil {
+			if err := s.store.Update(r.Context(), id, renamed.Title, normalizedURL, favicon, faviconType, folderID); err != nil {
 				s.fail(w, err)
 				return
 			}
@@ -486,7 +534,7 @@ func (s *Server) handleRename(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, saveResult{OK: true, ID: id}, http.StatusOK)
 		return
 	}
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	http.Redirect(w, r, folderLocation(folderID), http.StatusSeeOther)
 }
 
 func (s *Server) respondUpdateError(w http.ResponseWriter, r *http.Request, id int64, title, rawURL string, status int, message, code string) {
@@ -512,7 +560,15 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	folderID, valid, err := s.readFolder(r, r.PostFormValue("folder"), 0)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if !valid {
+		folderID = 0
+	}
+	http.Redirect(w, r, folderLocation(folderID), http.StatusSeeOther)
 }
 
 // handleReorder stores the grid order: the full list of Bookmark ids, in the
@@ -540,6 +596,21 @@ func (s *Server) handleReorder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	folderID, valid, err := s.readFolder(r, r.PostFormValue("folder"), 0)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if !valid {
+		http.Error(w, "folder does not exist", http.StatusBadRequest)
+		return
+	}
+	var visible []domain.Bookmark
+	for _, b := range existing {
+		if b.FolderID == folderID {
+			visible = append(visible, b)
+		}
+	}
 	ids := make([]int64, 0, len(r.PostForm["ids"]))
 	for _, raw := range r.PostForm["ids"] {
 		if id, err := strconv.ParseInt(raw, 10, 64); err == nil {
@@ -547,10 +618,15 @@ func (s *Server) handleReorder(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	ordered := domain.Reorder(existing, ids)
-	full := make([]int64, len(ordered))
-	for i, b := range ordered {
+	ordered := domain.Reorder(visible, ids)
+	full := make([]int64, len(existing))
+	next := 0
+	for i, b := range existing {
 		full[i] = b.ID
+		if b.FolderID == folderID {
+			full[i] = ordered[next].ID
+			next++
+		}
 	}
 	if err := s.store.Reorder(r.Context(), full); err != nil {
 		s.fail(w, err)

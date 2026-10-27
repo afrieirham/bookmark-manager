@@ -57,7 +57,7 @@
   .bookmarklet-help summary{cursor:pointer}
   .bookmarklet-help a{display:inline-block;margin-top:8px;color:inherit}
   .bookmarklet-help p{margin:4px 0 0}
-  .dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}
+  .dialog-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:10px;margin-top:24px}
   .dialog-actions button,.dialog-actions a{min-width:92px;min-height:40px;display:inline-flex;align-items:center;justify-content:center;padding:8px 16px;border:1px solid #111;border-radius:9px;background:transparent;color:#111;text-decoration:none;font:inherit;font-weight:600;cursor:pointer}
   .dialog-actions .done{background:#111;color:#fff}
   .dialog-actions .done:disabled{opacity:.45;cursor:default}
@@ -69,11 +69,90 @@
     .shortcut-dialog{padding:22px 20px 18px}
   }
   @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+  main{display:flex;flex-direction:column;gap:32px}
+  .library{width:min(100%,1120px);margin:0 auto}
+  .library-header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  .breadcrumbs{display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-width:0}
+  .breadcrumbs a,.breadcrumbs span{color:inherit;overflow-wrap:anywhere}
+  .breadcrumbs a{text-underline-offset:4px}
+  .breadcrumbs .separator{color:var(--muted)}
+  .library-tools{position:relative;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .tool,.folder-settings summary{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:7px 12px;border:1px solid var(--line);border-radius:9px;background:var(--panel);color:var(--ink);font:inherit;font-size:14px;text-decoration:none;cursor:pointer}
+  .tool:hover,.folder-settings summary:hover{background:var(--hover)}
+  .library :focus-visible,.shortcut-dialog select:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+  .folder-settings{margin-top:16px}
+  .folder-settings summary{list-style:none}
+  .folder-settings summary::-webkit-details-marker{display:none}
+  .folder-settings form{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:14px}
+  .folder-settings label{font-size:14px}
+  .folder-settings input{min-width:0;width:min(100%,300px);min-height:42px;padding:8px 12px;border:1px solid var(--line);border-radius:9px;background:var(--panel);color:var(--ink);font:inherit}
+  .folder-create{margin:0}
+  .folder-create form{position:absolute;top:calc(100% + 8px);right:0;z-index:3;width:min(400px,calc(100vw - 32px));margin:0;padding:18px;border-radius:12px;background:var(--panel);box-shadow:0 5px 18px #0003}
+  .folder-create label,.folder-create input{width:100%}
+  .folder-help,.import-help{color:var(--ink);font-size:14px;line-height:1.6}
+  .folder-help{margin:8px 0}
+  .notice{margin:18px 0 0;padding:12px 0;border-top:1px solid var(--line);font-size:14px;overflow-wrap:anywhere}
+  .grid{flex:1;align-content:center;margin:0 auto;padding-bottom:48px}
+  .folder{width:100%;min-width:0;padding:8px 4px 12px;text-align:center;border-radius:14px}
+  .folder:hover,.folder:focus-within{background:var(--hover)}
+  .folder-icon svg{width:30px;height:30px}
+  .shortcut-dialog select{display:block;width:100%;min-height:50px;margin-top:8px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--tile);color:var(--ink);font:inherit;font-size:16px}
+  .shortcut-dialog input[type=file]{height:auto;min-height:50px;padding:12px;font-size:14px}
+  .import-help ol{padding-left:22px}
+  .import-help a{color:inherit;text-underline-offset:3px}
+  .shortcut-dialog .import-error{color:var(--ink)}
+  @media(max-width:520px){.library-header{align-items:flex-start}.library-tools{width:100%}.grid{padding-bottom:24px}.folder-settings form{align-items:stretch}.folder-settings input{flex:1}}
 </style>
 </head>
 <body>
 <main>
+<header class="library">
+  <div class="library-header">
+    <nav class="breadcrumbs" aria-label="Folder navigation">
+      {{if .CurrentFolder}}<a href="/">Start page</a>{{else}}<span aria-current="page">Start page</span>{{end}}
+      {{range .Breadcrumbs}}<span class="separator" aria-hidden="true">/</span>{{if eq .ID $.FolderID}}<span aria-current="page">{{.Title}}</span>{{else}}<a href="/?folder={{.ID}}">{{.Title}}</a>{{end}}{{end}}
+    </nav>
+    <div class="library-tools">
+      <details class="folder-settings folder-create" id="new-folder">
+        <summary>New folder</summary>
+        <form method="post" action="/folders/create">
+          <input type="hidden" name="parent" value="{{.FolderID}}">
+          <label for="folder-title">Folder name</label>
+          <input id="folder-title" name="title" maxlength="160" required autocomplete="off">
+          <button class="tool" type="submit">Create folder</button>
+        </form>
+      </details>
+      <a class="tool" id="import-link" href="{{.Location}}{{if .FolderID}}&amp;{{else}}?{{end}}import=1">Import from Chrome</a>
+    </div>
+  </div>
+  {{if .Notice}}<p class="notice" role="status">{{.Notice}}</p>{{end}}
+  {{if .FolderError}}<p class="notice" role="alert">{{.FolderError}}</p>{{end}}
+  {{if .CurrentFolder}}
+  <details class="folder-settings">
+    <summary>Folder options</summary>
+    <form method="post" action="/folders/rename">
+      <input type="hidden" name="id" value="{{.FolderID}}">
+      <label for="rename-folder-title">Folder name</label>
+      <input id="rename-folder-title" name="title" value="{{.CurrentFolder.Title}}" maxlength="160" required autocomplete="off">
+      <button class="tool" type="submit">Rename folder</button>
+    </form>
+    <form method="post" action="/folders/delete">
+      <input type="hidden" name="id" value="{{.FolderID}}">
+      <button class="tool" type="submit">Remove folder</button>
+    </form>
+    <p class="folder-help">Removing this folder moves its bookmarks and subfolders to the parent folder.</p>
+  </details>
+  {{end}}
+</header>
 <div class="grid" aria-label="Bookmarks">
+{{range .Folders}}
+  <div class="folder">
+    <a class="bookmark-link" href="/?folder={{.ID}}" aria-label="Open folder {{.Title}}">
+      <span class="icon folder-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></svg></span>
+      <span class="label">{{.Title}}</span>
+    </a>
+  </div>
+{{end}}
 {{range .Bookmarks}}
   <div class="bookmark" data-id="{{.ID}}" draggable="true">
     <a class="bookmark-link" href="{{.URL}}" draggable="false">
@@ -85,21 +164,23 @@
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>
       </summary>
       <div class="bookmark-actions">
-      <a class="edit-shortcut" href="/?saved={{.ID}}" data-id="{{.ID}}" data-title="{{.Title}}" data-url="{{.URL}}">Edit shortcut</a>
+      <a class="edit-shortcut" href="/?saved={{.ID}}" data-id="{{.ID}}" data-title="{{.Title}}" data-url="{{.URL}}" data-folder="{{.FolderID}}">Edit shortcut</a>
         <form method="post" action="/delete">
           <input type="hidden" name="id" value="{{.ID}}">
+          <input type="hidden" name="folder" value="{{$.FolderID}}">
           <button type="submit" class="remove">Remove</button>
         </form>
       </div>
     </details>
   </div>
-{{else}}
-  <p class="empty">No bookmarks yet.</p>
+{{end}}
+{{if and (not .Bookmarks) (not .Folders)}}
+  <p class="empty">{{if .CurrentFolder}}This folder is empty.{{else}}No bookmarks yet.{{end}}<br>Add a shortcut or import your Chrome bookmarks.</p>
 {{end}}
 </div>
 </main>
 
-<a class="manage" href="/?add=1" aria-label="Add shortcut" title="Add shortcut">
+<a class="manage" href="{{.Location}}{{if .FolderID}}&amp;{{else}}?{{end}}add=1" aria-label="Add shortcut" title="Add shortcut">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14 5 5 5M4 20l4.2-.8L19 8.4 15.6 5 4.8 15.8 4 20Z"/></svg>
 </a>
 
@@ -113,6 +194,12 @@
     <label for="shortcut-url">URL
       <input id="shortcut-url" name="u" value="{{if .Pending}}{{.Pending.URL}}{{end}}" inputmode="url" autocomplete="url" required>
     </label>
+    <label for="shortcut-folder">Folder
+      <select id="shortcut-folder" name="folder">
+        {{$selected := .FolderID}}{{if .Pending}}{{$selected = .Pending.FolderID}}{{end}}
+        {{range .FolderOptions}}<option value="{{.ID}}"{{if eq .ID $selected}} selected{{end}}>{{.Title}}</option>{{end}}
+      </select>
+    </label>
     <details class="bookmarklet-help">
       <summary>Save pages from your browser</summary>
       <a class="bmk" href="{{.Bookmarklet}}" draggable="true">Save to app</a>
@@ -120,8 +207,35 @@
     </details>
     <p class="dialog-error" id="dialog-error" aria-live="polite">{{if .Duplicate}}That URL is already in your bookmarks.{{else}}{{.Error}}{{end}}</p>
     <div class="dialog-actions">
-      <a href="/" id="cancel-shortcut">Cancel</a>
+      <a href="{{.Location}}" id="cancel-shortcut">Cancel</a>
       <button type="submit" class="done" id="done-shortcut">Done</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="shortcut-dialog" id="import-dialog" aria-labelledby="import-title"{{if .ImportOpen}} open{{end}}>
+  <form method="post" action="/import" enctype="multipart/form-data" id="import-form">
+    <h1 id="import-title">Import from Chrome</h1>
+    <div class="import-help" id="import-help">
+      <ol>
+        <li>In Chrome on your computer, open Bookmarks and lists → Bookmark manager.</li>
+        <li>Open the bookmark manager’s menu and choose Export bookmarks.</li>
+        <li>Choose the exported HTML file below.</li>
+      </ol>
+      <p>Folder structure and titles are preserved. URLs already saved are skipped, keeping your existing bookmarks. Only HTTP and HTTPS bookmarks are imported.</p>
+      <a href="https://support.google.com/chrome/answer/96816" target="_blank" rel="noopener noreferrer">Chrome export instructions</a>
+    </div>
+    <label for="import-file">Bookmarks HTML file
+      <input id="import-file" name="file" type="file" accept=".html,.htm,text/html" required aria-describedby="import-file-help import-error">
+    </label>
+    <p class="import-help" id="import-file-help">Maximum file size: 20 MB.</p>
+    <label for="import-folder">Import into
+      <select id="import-folder" name="folder">{{range .FolderOptions}}<option value="{{.ID}}"{{if eq .ID $.FolderID}} selected{{end}}>{{.Title}}</option>{{end}}</select>
+    </label>
+    <p class="dialog-error import-error" id="import-error" role="alert">{{.ImportError}}</p>
+    <div class="dialog-actions">
+      <a href="{{.Location}}" id="cancel-import">Cancel</a>
+      <button type="submit" class="done" id="import-submit">Import bookmarks</button>
     </div>
   </form>
 </dialog>
@@ -136,6 +250,32 @@
   var heading = document.getElementById("dialog-title");
   var message = document.getElementById("dialog-error");
   var done = document.getElementById("done-shortcut");
+  var folder = document.getElementById("shortcut-folder");
+  var currentFolder = {{.FolderID}};
+  var newFolder = document.getElementById("new-folder");
+  newFolder.addEventListener("toggle", function () {
+    if (newFolder.open) document.getElementById("folder-title").focus();
+  });
+
+  var importDialog = document.getElementById("import-dialog");
+  document.getElementById("import-link").addEventListener("click", function (event) {
+    event.preventDefault();
+    importDialog.showModal();
+  });
+  document.getElementById("cancel-import").addEventListener("click", function (event) {
+    event.preventDefault();
+    importDialog.close();
+  });
+  document.getElementById("import-form").addEventListener("submit", function () {
+    var button = document.getElementById("import-submit");
+    button.disabled = true;
+    button.textContent = "Importing…";
+    this.setAttribute("aria-busy", "true");
+  });
+  if (importDialog.hasAttribute("open")) {
+    importDialog.removeAttribute("open");
+    importDialog.showModal();
+  }
 
   document.querySelectorAll(".icon-favicon").forEach(function (image) {
     function revealFavicon() {
@@ -159,6 +299,7 @@
     id.value = "";
     title.value = "";
     url.value = "";
+    folder.value = String(currentFolder);
     heading.textContent = "Add shortcut";
     message.textContent = "";
     updateDone();
@@ -173,6 +314,7 @@
     id.value = button.dataset.id;
     title.value = button.dataset.title;
     url.value = button.dataset.url;
+    folder.value = button.dataset.folder;
     heading.textContent = "Edit shortcut";
     message.textContent = "";
     updateDone();
@@ -188,6 +330,7 @@
     button.addEventListener("click", function (event) { event.preventDefault(); showEdit(button); });
   });
   document.addEventListener("click", function (event) {
+    if (!newFolder.contains(event.target)) newFolder.open = false;
     if (event.target.closest(".bookmark-menu")) {
       document.querySelectorAll(".bookmark-menu[open]").forEach(function (menu) {
         if (!menu.contains(event.target)) menu.open = false;
@@ -195,6 +338,12 @@
       return;
     }
     document.querySelectorAll(".bookmark-menu[open]").forEach(function (menu) { menu.open = false; });
+  });
+  document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape" && newFolder.open) {
+      newFolder.open = false;
+      newFolder.querySelector("summary").focus();
+    }
   });
 
   var grid = document.querySelector(".grid");
@@ -204,6 +353,7 @@
   }
   function saveOrder() {
     var order = new FormData();
+    order.append("folder", String(currentFolder));
     cards().forEach(function (card) { order.append("ids", card.dataset.id); });
     fetch("/reorder", { method: "POST", body: order });
   }
@@ -270,7 +420,7 @@
         updateDone();
         return;
       }
-      location.href = "/";
+      location.href = folder.value === "0" ? "/" : "/?folder=" + encodeURIComponent(folder.value);
     }).catch(function (error) {
       message.textContent = error.message;
       updateDone();
